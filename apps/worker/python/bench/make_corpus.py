@@ -20,7 +20,10 @@ import wave
 import numpy as np
 
 SR = 16000
-VOICES = ["Luciana", "Eddy", "Flo", "Reed", "Shelley", "Rocko"]
+# Só a Luciana: as demais vozes pt-BR do macOS (Eddy, Flo, Reed, Rocko, Shelley...) são vozes de efeito que nem o Whisper
+# entende (WER 57–92% contra 2% da Luciana) e contaminariam a medição. A variedade vem da velocidade da fala.
+VOICE = "Luciana"
+RATES = [150, 185, 230]  # palavras por minuto (lenta, normal, rápida)
 SENTENCES = [
     "Você sabia que alugar um carro por assinatura sai mais barato que financiar",
     "Quarenta por cento dos clientes voltam em menos de um mês",
@@ -41,8 +44,8 @@ SENTENCES = [
 ]
 
 
-def say_word(voice: str, word: str, out: str) -> None:
-    subprocess.run(["say", "-v", voice, "-r", "185", "-o", out, "--data-format=LEI16@%d" % SR, word], check=True)
+def say_word(voice: str, rate: int, word: str, out: str) -> None:
+    subprocess.run(["say", "-v", voice, "-r", str(rate), "-o", out, "--data-format=LEI16@%d" % SR, word], check=True)
 
 
 def read_wav(path: str) -> np.ndarray:
@@ -75,24 +78,23 @@ def main() -> int:
     cache: dict = {}
     tmp = os.path.join(out, "_w.wav")
 
-    def word_audio(voice: str, word: str) -> np.ndarray:
-        key = (voice, word)
+    def word_audio(rate: int, word: str) -> np.ndarray:
+        key = (rate, word)
         if key not in cache:
-            say_word(voice, word, tmp)
+            say_word(VOICE, rate, word, tmp)
             cache[key] = trim_speech(read_wav(tmp))
         return cache[key]
 
     items = []
-    for vi, voice in enumerate(VOICES):
+    for vi, rate in enumerate(RATES):
+        voice = f"{VOICE}@{rate}"
         for si, sentence in enumerate(SENTENCES):
-            if (vi + si) % 2:  # metade das combinações: corpus menor, todas as vozes e frases representadas
-                continue
             words = sentence.split()
             parts = [np.zeros(int(0.4 * SR), dtype=np.float32)]
             pos = len(parts[0])
             truth = []
             for wi, w in enumerate(words):
-                a = word_audio(voice, w)
+                a = word_audio(rate, w)
                 truth.append({"w": w, "start_ms": round(pos * 1000 / SR, 1), "end_ms": round((pos + len(a)) * 1000 / SR, 1)})
                 parts.append(a)
                 pos += len(a)
@@ -102,7 +104,7 @@ def main() -> int:
             parts.append(np.zeros(int(0.5 * SR), dtype=np.float32))
             clean = np.concatenate(parts)
             clean = clean / max(1e-6, np.abs(clean).max()) * 0.8
-            name = f"{voice.lower()}_{si:02d}"
+            name = f"luciana{rate}_{si:02d}"
             write_wav(os.path.join(out, f"{name}_limpo.wav"), clean)
             items.append({"file": f"{name}_limpo.wav", "voice": voice, "variant": "limpo", "text": sentence, "words": truth})
 

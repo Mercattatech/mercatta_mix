@@ -22,17 +22,27 @@ export interface Transcriber {
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-/** faster-whisper local (Python). Padrão da Fase 1: sem custo por minuto e sem depender do desligamento do whisper-1. */
+/**
+ * faster-whisper local (Python) para o texto + alinhamento forçado wav2vec2 para os tempos de palavra (padrão).
+ * Sem custo por minuto e sem depender do desligamento do whisper-1. `WHISPER_ALIGN=off` usa só os tempos nativos.
+ */
 export class FasterWhisperTranscriber implements Transcriber {
   readonly provider = "faster-whisper";
+  /** Rótulo gravado/consultado no cache: muda quando muda o modelo OU o alinhador. */
+  readonly model: string;
+  private readonly whisperModel: string;
   constructor(
-    readonly model = process.env.WHISPER_MODEL ?? "small",
+    whisperModel = process.env.WHISPER_MODEL ?? "small",
     private readonly python = process.env.PYTHON_BIN ?? "python3",
     private readonly script = path.join(HERE, "../python/transcribe.py"),
-  ) {}
+    align = process.env.WHISPER_ALIGN !== "off",
+  ) {
+    this.whisperModel = whisperModel;
+    this.model = align ? `${whisperModel}+wav2vec2` : whisperModel;
+  }
 
   async transcribe({ mediaPath, language }: { mediaPath: string; language: string }): Promise<TranscriptResult> {
-    const { stdout } = await run(this.python, [this.script, mediaPath, language, this.model]);
+    const { stdout } = await run(this.python, [this.script, mediaPath, language, this.whisperModel]);
     const json = JSON.parse(stdout.toString()) as { language: string; text: string; words: RawWord[] };
     return { words: normalizeWords(json.words), text: json.text, provider: this.provider, model: this.model, language: json.language };
   }

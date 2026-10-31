@@ -72,6 +72,7 @@ def pct(xs, p):
 
 def evaluate(items, transcribe):
     res = {}
+    by_voice: dict = {}
     total_audio = 0.0
     t0 = time.time()
     for it in items:
@@ -82,6 +83,7 @@ def evaluate(items, transcribe):
         hyp_n = [norm(w["w"]) for w in hyp]
         r = res.setdefault(it["variant"], {"wer": [], "ds": [], "de": [], "n": 0, "matched": 0})
         r["wer"].append((wer(ref_n, hyp_n), len(ref_n)))
+        by_voice.setdefault(it["voice"], []).append((wer(ref_n, hyp_n), len(ref_n)))
         r["n"] += len(ref_n)
         sm = difflib.SequenceMatcher(a=ref_n, b=hyp_n, autojunk=False)
         for tag, i1, i2, j1, j2 in sm.get_opcodes():
@@ -92,10 +94,11 @@ def evaluate(items, transcribe):
                     r["de"].append(h["end_ms"] - t["end_ms"])
                     r["matched"] += 1
     elapsed = time.time() - t0
-    return res, elapsed, total_audio
+    return res, by_voice, elapsed, total_audio
 
 
-def report(name, res, elapsed, audio):
+def report(name, res, by_voice, elapsed, audio):
+    print("WER por voz: " + "  ".join(f"{v}={sum(a * n for a, n in xs) / sum(n for _, n in xs) * 100:.0f}%" for v, xs in sorted(by_voice.items())))
     print(f"\n== {name}   (tempo {elapsed:.0f}s para {audio:.0f}s de áudio = {elapsed / audio:.2f}x do tempo real)")
     print(f"{'variante':8} {'WER':>6} {'casadas':>8} | {'INÍCIO: viés':>12} {'|med|':>6} {'p95':>6} {'máx':>6} {'≤150ms':>7} | {'FIM: viés':>10} {'|med|':>6} {'p95':>6} {'máx':>6} {'≤150ms':>7}")
     summary = {}
@@ -125,6 +128,13 @@ def main() -> int:
     items = json.load(open(os.path.join(corpus, "truth.json"), encoding="utf-8"))
     for it in items:
         it["file"] = os.path.join(corpus, it["file"])
+    only_variant = os.environ.get("BENCH_VARIANT")
+    only_voices = os.environ.get("BENCH_VOICES")
+    if only_variant:
+        items = [it for it in items if it["variant"] == only_variant]
+    if only_voices:
+        items = [it for it in items if it["voice"] in only_voices.split(",")]
+    out_file = os.path.join(corpus, "..", os.environ.get("BENCH_OUT", "results.json"))
     out = {}
     for engine in sys.argv[2:]:
         kind, _, rest = engine.partition(":")
@@ -140,9 +150,9 @@ def main() -> int:
         else:
             print("motor desconhecido:", engine)
             return 2
-        res, elapsed, audio = evaluate(items, fn)
-        out[engine] = report(engine, res, elapsed, audio)
-        with open(os.path.join(corpus, "..", "results.json"), "w", encoding="utf-8") as f:
+        res, by_voice, elapsed, audio = evaluate(items, fn)
+        out[engine] = report(engine, res, by_voice, elapsed, audio)
+        with open(out_file, "w", encoding="utf-8") as f:
             json.dump(out, f, ensure_ascii=False, indent=1)
     return 0
 
