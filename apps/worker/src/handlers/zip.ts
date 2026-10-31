@@ -1,7 +1,7 @@
 import { createWriteStream } from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
-import { ZipArchive } from "archiver";
+import { ZipFile } from "yazl";
 import { UserFacingError, type JobContext, type ZipPayload } from "@mercatta/server";
 import { logger, type WorkerDeps } from "../deps";
 import { runTrackedJob } from "./lifecycle";
@@ -41,11 +41,14 @@ export async function buildZip(deps: WorkerDeps, payload: ZipPayload, ctx: JobCo
 
     await progress(80, "Compactando");
     const zipPath = path.join(workDir, "videos.zip");
-    const archive = new ZipArchive({ store: true });
-    const done = pipeline(archive, createWriteStream(zipPath));
-    for (const f of files) archive.file(f.file, { name: `${f.code}.mp4` });
-    await archive.finalize();
-    await done;
+    const archive = new ZipFile();
+    const written = pipeline(archive.outputStream, createWriteStream(zipPath));
+    // erro ao ler um arquivo de entrada não fecha o stream de saída: precisa derrubar o job aqui
+    const failed = new Promise<never>((_, reject) => archive.on("error", reject));
+    failed.catch(() => undefined);
+    for (const f of files) archive.addFile(f.file, `${f.code}.mp4`, { compress: false });
+    archive.end();
+    await Promise.race([written, failed]);
 
     await progress(92, "Salvando o arquivo");
     const key = `org/${org}/zips/${payload.projectId}/${payload.jobId}.zip`;

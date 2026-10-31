@@ -11,10 +11,15 @@ const schema = z.object({
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().optional(),
-  /** `console` só imprime o e-mail no terminal (desenvolvimento). Em produção use `smtp`. */
+  /**
+   * Alternativa ao painel Admin → E-mail. `console` só imprime o e-mail no terminal (desenvolvimento).
+   * O SMTP cadastrado no painel tem prioridade sobre estas variáveis.
+   */
   MAIL_DRIVER: z.enum(["console", "smtp"]).default("console"),
   SMTP_URL: z.string().optional(),
   MAIL_FROM: z.string().optional(),
+  /** 32 bytes (openssl rand -base64 32). Cifra a senha do SMTP guardada no banco. */
+  SETTINGS_ENCRYPTION_KEY: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
@@ -38,9 +43,6 @@ export function serverEnv(): ServerEnv {
     for (const k of ["SMTP_URL", "MAIL_FROM"] as const) {
       if (!parsed.data[k]) throw new Error(`${k} é obrigatória com MAIL_DRIVER=smtp`);
     }
-  }
-  if (process.env.NODE_ENV === "production" && parsed.data.MAIL_DRIVER === "console") {
-    throw new Error("MAIL_DRIVER=console não pode ser usado em produção: o link de acesso nunca chegaria às pessoas. Use MAIL_DRIVER=smtp.");
   }
   cached = { ...parsed.data, APP_URL: parsed.data.APP_URL.replace(/\/+$/, "") };
   return cached;

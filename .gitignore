@@ -11,3 +11,5 @@ coverage/
 supabase/.temp/
 supabase/.branches/
 tmp/
+.venv/
+__pycache__/

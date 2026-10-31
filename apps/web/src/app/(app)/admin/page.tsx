@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Card } from "@/components/ui";
 import { getDb } from "@/lib/db";
@@ -34,6 +35,16 @@ export default async function AdminPage() {
         <h1 className="font-display text-3xl font-semibold tracking-tight">Admin da plataforma</h1>
         <p className="mt-1 text-muted">Crie empresas clientes, convide pessoas (acesso só por convite) e dê créditos.</p>
       </div>
+
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <p className="font-medium">E-mail (SMTP)</p>
+          <p className="text-xs text-muted">Escolha o servidor que envia os links de acesso e convites (Gmail, Hostinger, Resend, qualquer SMTP).</p>
+        </div>
+        <Link id="open-mail-settings" href="/admin/email" className="rounded-xl border border-white/15 bg-white/[0.03] px-4 py-2 text-sm font-medium transition hover:bg-white/[0.08]">
+          Configurar e-mail
+        </Link>
+      </Card>
 
       <AdminForms orgs={rows.map((o) => ({ id: o.id, name: o.name }))} />
 
