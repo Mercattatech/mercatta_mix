@@ -47,12 +47,12 @@ export function fromPglite(db: PgliteLike): Db {
 }
 
 /**
- * Executa `fn` como um usuário autenticado (define auth.uid()) — permite reutilizar as funções
+ * Executa `fn` como um usuário (define `app.user_id`, lido por `current_user_id()`) — permite reutilizar as funções
  * de permissão do banco (can_write_org etc.) a partir do servidor.
  */
 export async function withUser<T>(db: Db, userId: string, fn: (tx: Sql) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
+    await tx.query("select set_config('app.user_id', $1, true)", [userId]);
     return fn(tx);
   });
 }

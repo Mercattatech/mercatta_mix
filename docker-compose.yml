@@ -1,0 +1,24 @@
+name: mercatta-mix
+
+# Postgres local para desenvolvimento:  docker compose up -d
+# Conexão: postgres://mix:mix@localhost:5432/mix
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mix
+      POSTGRES_PASSWORD: mix
+      POSTGRES_DB: mix
+    ports:
+      - "127.0.0.1:5432:5432" # só acessível da própria máquina
+    volumes:
+      - mix-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mix -d mix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mix-pgdata:

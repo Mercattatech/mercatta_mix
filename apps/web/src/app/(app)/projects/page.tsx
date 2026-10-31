@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert, Badge, Button, Card } from "@/components/ui";
 import { getAppContext } from "@/lib/context";
-import { supabaseForUser } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Projetos" };
 
@@ -23,12 +23,10 @@ export default async function ProjectsPage() {
       </Alert>
     );
   }
-  const { data: projects } = await (await supabaseForUser())
-    .from("projects")
-    .select("id, name, status, created_at")
-    .eq("organization_id", ctx.organization.id)
-    .neq("status", "archived")
-    .order("created_at", { ascending: false });
+  const { rows: projects } = await getDb().query<{ id: string; name: string; status: string; created_at: Date }>(
+    "select id, name, status, created_at from projects where organization_id = $1 and status <> 'archived' order by created_at desc",
+    [ctx.organization.id],
+  );
 
   return (
     <div className="animate-in space-y-8">
@@ -44,7 +42,7 @@ export default async function ProjectsPage() {
         )}
       </div>
 
-      {projects && projects.length > 0 ? (
+      {projects.length > 0 ? (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((p) => {
             const s = STATUS[p.status] ?? { label: p.status, tone: "neutral" as const };

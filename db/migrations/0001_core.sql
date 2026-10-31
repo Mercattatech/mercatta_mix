@@ -1,20 +1,53 @@
 -- 0001_core.sql — Identidade, multiempresa (multi-tenant) e RLS base.
 -- Convenções: uuid pk, timestamptz em UTC, toda tabela de cliente tem organization_id + RLS.
--- Roda no Supabase (Postgres 15+) e no PGlite dos testes (com o stub de auth do bootstrap de teste).
+-- Postgres 15+ puro (sem Supabase). Testado no PGlite e em Postgres 16.
+--
+-- Modelo de acesso:
+--  * O site e o worker conectam com o dono do banco (ignora a RLS) e checam permissão no código.
+--  * As políticas de RLS abaixo ficam como segunda barreira: valem para o papel `app_user`
+--    quando uma consulta roda com `set local role app_user` + `app.user_id` (ver current_user_id()).
 
--- Tabelas novas nascem SEM acesso para anon/authenticated; cada migration concede só o necessário.
-alter default privileges in schema public revoke all on tables from anon, authenticated;
-alter default privileges in schema public revoke all on sequences from anon, authenticated;
-alter default privileges in schema public revoke all on functions from anon, authenticated;
+-- Papel sem login usado só para consultas "como usuário" (RLS). Criado uma única vez.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'app_user') then
+    create role app_user nologin;
+  end if;
+end
+$$;
+grant usage on schema public to app_user;
+
+-- Tabelas novas nascem SEM acesso para app_user; cada migration concede só o necessário.
+alter default privileges in schema public revoke all on tables from app_user;
+alter default privileges in schema public revoke all on sequences from app_user;
+alter default privileges in schema public revoke all on functions from app_user;
+
+-- Quem é o usuário desta transação (definido pelo servidor com set_config('app.user_id', ..., true)).
+create function public.current_user_id() returns uuid
+language sql stable as $$
+  select nullif(current_setting('app.user_id', true), '')::uuid
+$$;
+grant execute on function public.current_user_id() to app_user;
 
 -- ============================================================================
 -- Tabelas
 -- ============================================================================
 
+-- Identidade de quem entra no sistema. O acesso é só por convite: o admin cria a linha, ninguém se cadastra sozinho.
+create table public.users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique check (email = lower(email) and position('@' in email) > 1),
+  name text,
+  phone text,
+  locale text not null default 'pt-BR',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table public.agencies (
   id uuid primary key default gen_random_uuid(),
   name text not null check (length(trim(name)) > 0),
-  owner_user_id uuid not null references auth.users(id) on delete restrict,
+  owner_user_id uuid not null references public.users(id) on delete restrict,
   status text not null default 'active' check (status in ('active', 'suspended')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -34,17 +67,6 @@ create table public.organizations (
 );
 create index organizations_agency_idx on public.organizations(agency_id);
 
--- Perfil público do usuário (espelha auth.users).
-create table public.users (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text not null,
-  name text,
-  phone text,
-  locale text not null default 'pt-BR',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
 create table public.memberships (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
@@ -56,7 +78,7 @@ create table public.memberships (
 create index memberships_org_idx on public.memberships(organization_id);
 
 create table public.platform_admins (
-  user_id uuid primary key references auth.users(id) on delete cascade,
+  user_id uuid primary key references public.users(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 
@@ -111,19 +133,19 @@ create table public.platform_settings (
 
 create function public.is_platform_admin() returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.platform_admins where user_id = auth.uid());
+  select exists (select 1 from public.platform_admins where user_id = public.current_user_id());
 $$;
 
 create function public.is_member(org uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.memberships where organization_id = org and user_id = auth.uid());
+  select exists (select 1 from public.memberships where organization_id = org and user_id = public.current_user_id());
 $$;
 
 create function public.has_role(org uuid, roles text[]) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.memberships
-    where organization_id = org and user_id = auth.uid() and role = any(roles)
+    where organization_id = org and user_id = public.current_user_id() and role = any(roles)
   );
 $$;
 
@@ -134,7 +156,7 @@ language sql stable security definer set search_path = public as $$
     select 1
     from public.organizations o
     join public.agencies a on a.id = o.agency_id
-    where o.id = org and a.owner_user_id = auth.uid() and a.status = 'active'
+    where o.id = org and a.owner_user_id = public.current_user_id() and a.status = 'active'
   );
 $$;
 
@@ -162,7 +184,7 @@ revoke all on function public.is_platform_admin(), public.is_member(uuid), publi
   public.is_agency_manager(uuid), public.can_read_org(uuid), public.can_write_org(uuid), public.can_admin_org(uuid) from public;
 grant execute on function public.is_platform_admin(), public.is_member(uuid), public.has_role(uuid, text[]),
   public.is_agency_manager(uuid), public.can_read_org(uuid), public.can_write_org(uuid), public.can_admin_org(uuid)
-  to authenticated, service_role;
+  to app_user;
 
 -- ============================================================================
 -- Gatilhos
@@ -210,18 +232,6 @@ end;
 $$;
 create trigger memberships_keep_owner before update or delete on public.memberships for each row execute function public.keep_one_owner();
 
--- Espelha auth.users em public.users.
-create function public.handle_new_auth_user() returns trigger
-language plpgsql security definer set search_path = public as $$
-begin
-  insert into public.users (id, email, name)
-  values (new.id, coalesce(new.email, ''), new.raw_user_meta_data ->> 'name')
-  on conflict (id) do nothing;
-  return new;
-end;
-$$;
-create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_auth_user();
-
 -- ============================================================================
 -- RLS
 -- ============================================================================
@@ -237,80 +247,80 @@ alter table public.audit_logs enable row level security;
 alter table public.platform_settings enable row level security;
 
 -- agencies
-create policy agencies_select on public.agencies for select to authenticated
-  using (owner_user_id = auth.uid() or public.is_platform_admin());
+create policy agencies_select on public.agencies for select to app_user
+  using (owner_user_id = public.current_user_id() or public.is_platform_admin());
 
--- organizations (criação/exclusão: só pelo servidor com service_role)
-create policy organizations_select on public.organizations for select to authenticated
+-- organizations (criação/exclusão: só pelo servidor, que conecta como dono do banco)
+create policy organizations_select on public.organizations for select to app_user
   using (public.can_read_org(id));
-create policy organizations_update on public.organizations for update to authenticated
+create policy organizations_update on public.organizations for update to app_user
   using (public.can_admin_org(id)) with check (public.can_admin_org(id));
 
 -- users: o próprio perfil, quem divide empresa com você, e o admin
-create policy users_select on public.users for select to authenticated
+create policy users_select on public.users for select to app_user
   using (
-    id = auth.uid()
+    id = public.current_user_id()
     or public.is_platform_admin()
     or exists (
       select 1 from public.memberships mine
       join public.memberships theirs on theirs.organization_id = mine.organization_id
-      where mine.user_id = auth.uid() and theirs.user_id = public.users.id
+      where mine.user_id = public.current_user_id() and theirs.user_id = public.users.id
     )
   );
-create policy users_update_self on public.users for update to authenticated
-  using (id = auth.uid()) with check (id = auth.uid());
+create policy users_update_self on public.users for update to app_user
+  using (id = public.current_user_id()) with check (id = public.current_user_id());
 
 -- memberships: a equipe vê a equipe; owner gerencia (inserir/remover); ninguém muda o próprio papel
-create policy memberships_select on public.memberships for select to authenticated
+create policy memberships_select on public.memberships for select to app_user
   using (public.can_read_org(organization_id));
-create policy memberships_insert on public.memberships for insert to authenticated
+create policy memberships_insert on public.memberships for insert to app_user
   with check (public.can_admin_org(organization_id));
-create policy memberships_update on public.memberships for update to authenticated
-  using (public.can_admin_org(organization_id) and user_id <> auth.uid())
+create policy memberships_update on public.memberships for update to app_user
+  using (public.can_admin_org(organization_id) and user_id <> public.current_user_id())
   with check (public.can_admin_org(organization_id));
-create policy memberships_delete on public.memberships for delete to authenticated
-  using (public.can_admin_org(organization_id) or user_id = auth.uid());
+create policy memberships_delete on public.memberships for delete to app_user
+  using (public.can_admin_org(organization_id) or user_id = public.current_user_id());
 
--- platform_admins: ninguém lê pelo cliente (só service_role, que ignora RLS)
+-- platform_admins: app_user não lê (só o servidor, que é dono e ignora a RLS)
 -- (sem políticas = sem acesso)
 
 -- invitations
-create policy invitations_select on public.invitations for select to authenticated
+create policy invitations_select on public.invitations for select to app_user
   using (public.can_admin_org(organization_id));
-create policy invitations_insert on public.invitations for insert to authenticated
+create policy invitations_insert on public.invitations for insert to app_user
   with check (public.can_admin_org(organization_id));
-create policy invitations_delete on public.invitations for delete to authenticated
+create policy invitations_delete on public.invitations for delete to app_user
   using (public.can_admin_org(organization_id));
 
 -- consent_records: o usuário vê e registra o próprio aceite
-create policy consent_select on public.consent_records for select to authenticated
-  using (user_id = auth.uid() or public.is_platform_admin());
-create policy consent_insert on public.consent_records for insert to authenticated
-  with check (user_id = auth.uid());
+create policy consent_select on public.consent_records for select to app_user
+  using (user_id = public.current_user_id() or public.is_platform_admin());
+create policy consent_insert on public.consent_records for insert to app_user
+  with check (user_id = public.current_user_id());
 
 -- audit_logs: leitura por owner/admin; escrita só pelo servidor
-create policy audit_select on public.audit_logs for select to authenticated
+create policy audit_select on public.audit_logs for select to app_user
   using (organization_id is not null and public.can_admin_org(organization_id) or public.is_platform_admin());
 
 -- platform_settings: leitura para logados; escrita só pelo servidor/admin
-create policy settings_select on public.platform_settings for select to authenticated using (true);
-create policy settings_admin_write on public.platform_settings for all to authenticated
+create policy settings_select on public.platform_settings for select to app_user using (true);
+create policy settings_admin_write on public.platform_settings for all to app_user
   using (public.is_platform_admin()) with check (public.is_platform_admin());
 
 -- ============================================================================
 -- Privilégios de tabela (RLS decide as LINHAS; GRANT decide as OPERAÇÕES)
 -- ============================================================================
 
-revoke all on all tables in schema public from anon, authenticated;
+revoke all on all tables in schema public from app_user;
 grant select on public.agencies, public.organizations, public.users, public.memberships,
-  public.invitations, public.consent_records, public.audit_logs, public.platform_settings to authenticated;
-grant update (name, timezone, approval_required, settings) on public.organizations to authenticated;
-grant update (name, phone, locale) on public.users to authenticated;
-grant insert, delete on public.memberships to authenticated;
-grant update (role) on public.memberships to authenticated;
-grant insert, delete on public.invitations to authenticated;
-grant insert on public.consent_records to authenticated;
-grant insert, update, delete on public.platform_settings to authenticated;
+  public.invitations, public.consent_records, public.audit_logs, public.platform_settings to app_user;
+grant update (name, timezone, approval_required, settings) on public.organizations to app_user;
+grant update (name, phone, locale) on public.users to app_user;
+grant insert, delete on public.memberships to app_user;
+grant update (role) on public.memberships to app_user;
+grant insert, delete on public.invitations to app_user;
+grant insert on public.consent_records to app_user;
+grant insert, update, delete on public.platform_settings to app_user;
 
 insert into public.platform_settings (key, value) values
   ('transcription', '{"provider": "faster-whisper", "model": "small", "fallback": "openai-whisper-1"}'),

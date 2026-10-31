@@ -96,7 +96,7 @@ create table public.transcripts (
   unique (source_video_id)
 );
 -- chave do cache (não é única: dois vídeos com o mesmo arquivo na mesma empresa reaproveitam a mesma transcrição)
--- busca de cache entre empresas é feita só pelo servidor (service_role), copiando a linha para a empresa de destino
+-- busca de cache entre empresas é feita só pelo servidor (dono do banco), copiando a linha para a empresa de destino
 create index transcripts_cache_idx on public.transcripts(sha256, language, provider, model);
 
 create table public.segments (
@@ -251,7 +251,7 @@ create trigger credits_ledger_no_update before update or delete on public.credit
   for each row execute function public.credits_ledger_immutable();
 
 -- ============================================================================
--- Funções de créditos (somente servidor, via service_role)
+-- Funções de créditos (somente servidor, que conecta como dono do banco)
 -- ============================================================================
 
 create function public.credit_balance(org uuid) returns bigint
@@ -332,9 +332,7 @@ $$;
 
 revoke all on function public.credit_balance(uuid), public.my_credit_balance(uuid), public._credit_active_reserve(uuid, text, uuid),
   public.reserve_credits(uuid, integer, text, uuid), public.commit_credits(uuid, text, uuid), public.release_credits(uuid, text, uuid) from public;
-grant execute on function public.my_credit_balance(uuid) to authenticated, service_role;
-grant execute on function public.credit_balance(uuid), public._credit_active_reserve(uuid, text, uuid), public.reserve_credits(uuid, integer, text, uuid),
-  public.commit_credits(uuid, text, uuid), public.release_credits(uuid, text, uuid) to service_role;
+grant execute on function public.my_credit_balance(uuid) to app_user;
 
 -- ============================================================================
 -- RLS
@@ -353,49 +351,49 @@ alter table public.usage_events enable row level security;
 alter table public.credits_ledger enable row level security;
 
 -- caption_styles: estilos da plataforma (organization_id null) são de todos; os da empresa, só dela
-create policy caption_styles_select on public.caption_styles for select to authenticated
+create policy caption_styles_select on public.caption_styles for select to app_user
   using (organization_id is null or public.can_read_org(organization_id));
-create policy caption_styles_insert on public.caption_styles for insert to authenticated
+create policy caption_styles_insert on public.caption_styles for insert to app_user
   with check (organization_id is not null and public.can_write_org(organization_id));
-create policy caption_styles_update on public.caption_styles for update to authenticated
+create policy caption_styles_update on public.caption_styles for update to app_user
   using (organization_id is not null and public.can_write_org(organization_id))
   with check (organization_id is not null and public.can_write_org(organization_id));
-create policy caption_styles_delete on public.caption_styles for delete to authenticated
+create policy caption_styles_delete on public.caption_styles for delete to app_user
   using (organization_id is not null and public.can_write_org(organization_id));
 
 -- leitura por empresa (escritas desses dados passam pelo servidor)
-create policy media_assets_select on public.media_assets for select to authenticated using (public.can_read_org(organization_id));
-create policy transcripts_select on public.transcripts for select to authenticated using (public.can_read_org(organization_id));
-create policy renders_select on public.renders for select to authenticated using (public.can_read_org(organization_id));
-create policy jobs_select on public.jobs for select to authenticated using (public.can_read_org(organization_id));
-create policy credits_select on public.credits_ledger for select to authenticated using (public.can_read_org(organization_id));
+create policy media_assets_select on public.media_assets for select to app_user using (public.can_read_org(organization_id));
+create policy transcripts_select on public.transcripts for select to app_user using (public.can_read_org(organization_id));
+create policy renders_select on public.renders for select to app_user using (public.can_read_org(organization_id));
+create policy jobs_select on public.jobs for select to app_user using (public.can_read_org(organization_id));
+create policy credits_select on public.credits_ledger for select to app_user using (public.can_read_org(organization_id));
 -- custo interno por cliente (margem da Mercatta): só o admin da plataforma
-create policy usage_events_select on public.usage_events for select to authenticated using (public.is_platform_admin());
+create policy usage_events_select on public.usage_events for select to app_user using (public.is_platform_admin());
 
 -- projects
-create policy projects_select on public.projects for select to authenticated using (public.can_read_org(organization_id));
-create policy projects_insert on public.projects for insert to authenticated
-  with check (public.can_write_org(organization_id) and created_by = auth.uid());
-create policy projects_update on public.projects for update to authenticated
+create policy projects_select on public.projects for select to app_user using (public.can_read_org(organization_id));
+create policy projects_insert on public.projects for insert to app_user
+  with check (public.can_write_org(organization_id) and created_by = public.current_user_id());
+create policy projects_update on public.projects for update to app_user
   using (public.can_write_org(organization_id)) with check (public.can_write_org(organization_id));
-create policy projects_delete on public.projects for delete to authenticated using (public.can_write_org(organization_id));
+create policy projects_delete on public.projects for delete to app_user using (public.can_write_org(organization_id));
 
 -- source_videos: criar passa pelo servidor (precisa criar o asset); editor renomeia/ordena/remove
-create policy source_videos_select on public.source_videos for select to authenticated using (public.can_read_org(organization_id));
-create policy source_videos_update on public.source_videos for update to authenticated
+create policy source_videos_select on public.source_videos for select to app_user using (public.can_read_org(organization_id));
+create policy source_videos_update on public.source_videos for update to app_user
   using (public.can_write_org(organization_id)) with check (public.can_write_org(organization_id));
-create policy source_videos_delete on public.source_videos for delete to authenticated using (public.can_write_org(organization_id));
+create policy source_videos_delete on public.source_videos for delete to app_user using (public.can_write_org(organization_id));
 
 -- segments: o editor de trechos escreve direto
-create policy segments_select on public.segments for select to authenticated using (public.can_read_org(organization_id));
-create policy segments_insert on public.segments for insert to authenticated with check (public.can_write_org(organization_id));
-create policy segments_update on public.segments for update to authenticated
+create policy segments_select on public.segments for select to app_user using (public.can_read_org(organization_id));
+create policy segments_insert on public.segments for insert to app_user with check (public.can_write_org(organization_id));
+create policy segments_update on public.segments for update to app_user
   using (public.can_write_org(organization_id)) with check (public.can_write_org(organization_id));
-create policy segments_delete on public.segments for delete to authenticated using (public.can_write_org(organization_id));
+create policy segments_delete on public.segments for delete to app_user using (public.can_write_org(organization_id));
 
 -- combinations: geradas pelo servidor; o editor só liga/desliga (selected)
-create policy combinations_select on public.combinations for select to authenticated using (public.can_read_org(organization_id));
-create policy combinations_update on public.combinations for update to authenticated
+create policy combinations_select on public.combinations for select to app_user using (public.can_read_org(organization_id));
+create policy combinations_update on public.combinations for update to app_user
   using (public.can_write_org(organization_id)) with check (public.can_write_org(organization_id));
 
 -- ============================================================================
@@ -403,15 +401,15 @@ create policy combinations_update on public.combinations for update to authentic
 -- ============================================================================
 
 grant select on public.caption_styles, public.media_assets, public.projects, public.source_videos, public.transcripts,
-  public.segments, public.combinations, public.renders, public.jobs, public.usage_events, public.credits_ledger to authenticated;
-grant insert, update, delete on public.caption_styles to authenticated;
-grant insert, delete on public.projects to authenticated;
-grant update (name, status, caption_style_id, target_networks, max_duration_ms, expires_at) on public.projects to authenticated;
-grant update (label, sort_order) on public.source_videos to authenticated;
-grant delete on public.source_videos to authenticated;
-grant insert, delete on public.segments to authenticated;
-grant update (label, sort_order, start_word_idx, end_word_idx, start_ms, end_ms) on public.segments to authenticated;
-grant update (selected) on public.combinations to authenticated;
+  public.segments, public.combinations, public.renders, public.jobs, public.usage_events, public.credits_ledger to app_user;
+grant insert, update, delete on public.caption_styles to app_user;
+grant insert, delete on public.projects to app_user;
+grant update (name, status, caption_style_id, target_networks, max_duration_ms, expires_at) on public.projects to app_user;
+grant update (label, sort_order) on public.source_videos to app_user;
+grant delete on public.source_videos to app_user;
+grant insert, delete on public.segments to app_user;
+grant update (label, sort_order, start_word_idx, end_word_idx, start_ms, end_ms) on public.segments to app_user;
+grant update (selected) on public.combinations to app_user;
 
 -- Estilo de legenda padrão da plataforma (karaokê: branco com destaque amarelo, caixa alta, embaixo)
 insert into public.caption_styles (organization_id, name, config, is_default) values

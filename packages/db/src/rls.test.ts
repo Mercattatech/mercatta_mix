@@ -54,7 +54,7 @@ async function seedOrg(org: "A" | "B") {
 beforeAll(async () => {
   db = await createTestDb();
   for (const [k, id] of Object.entries(U)) {
-    await db.query("insert into auth.users (id, email) values ($1, $2)", [id, `${k}@test.com`]);
+    await db.query("insert into users (id, email) values ($1, $2)", [id, `${k.toLowerCase()}@test.com`]);
   }
   await db.exec(`
     insert into platform_admins (user_id) values ('${U.admin}');
@@ -99,9 +99,18 @@ describe("isolamento total entre empresas", () => {
     }
   });
 
-  it("anon não tem acesso nem para ler", async () => {
-    const err = await errorOf(() => asUser(db, null, (q) => q("select * from projects"), "anon"));
-    expect(err).toMatch(/permission denied/);
+  it("sem usuário na sessão (app.user_id vazio) não enxerga nada", async () => {
+    for (const t of TENANT_TABLES) {
+      const r = await asUser(db, null, (q) => q(`select count(*)::int as n from ${t}`));
+      expect(r[0]!.n, t).toBe(0);
+    }
+  });
+
+  it("app_user não tem acesso às tabelas de login (sessões, links, tentativas) nem aos admins", async () => {
+    for (const t of ["sessions", "login_tokens", "login_attempts", "platform_admins"]) {
+      const err = await errorOf(() => asUser(db, U.admin, (q) => q(`select * from ${t}`)));
+      expect(err, t).toMatch(/permission denied/);
+    }
   });
 
   it("não é possível criar projeto na empresa de outro", async () => {
@@ -168,12 +177,12 @@ describe("papéis: owner, editor, aprovador", () => {
   });
 
   it("limite de 3 usuários por empresa", async () => {
-    await db.query("insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f4', 'quarto@test.com')");
+    await db.query("insert into users (id, email) values ('00000000-0000-0000-0000-0000000000f4', 'quarto@test.com')");
     const err = await errorOf(() =>
       db.query("insert into memberships (user_id, organization_id, role) values ('00000000-0000-0000-0000-0000000000f4', $1, 'editor')", [ORG.A]),
     );
     expect(err).toMatch(/member_limit_reached/);
-    await db.query("delete from auth.users where id = '00000000-0000-0000-0000-0000000000f4'");
+    await db.query("delete from users where id = '00000000-0000-0000-0000-0000000000f4'");
   });
 
   it("não remove o último owner", async () => {

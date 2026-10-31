@@ -115,7 +115,7 @@ beforeAll(async () => {
   transcriber = new BeepTranscriber();
   deps = { db, store, transcriber, tmpRoot: path.join(dir, "work"), burnCaptions: libass, log: () => undefined };
 
-  await pg.query("insert into auth.users (id, email) values ($1, 'dono@teste.com')", [USER]);
+  await pg.query("insert into users (id, email) values ($1, 'dono@teste.com')", [USER]);
   await pg.query("insert into organizations (id, name, slug) values ($1, 'Locadora Teste', 'locadora-teste')", [ORG]);
   await pg.query("insert into memberships (user_id, organization_id, role) values ($1, $2, 'owner')", [USER, ORG]);
   await pg.query("insert into credits_ledger (organization_id, delta, reason) values ($1, 100, 'grant')", [ORG]);

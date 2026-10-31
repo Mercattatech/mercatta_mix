@@ -1,68 +1,57 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, Button, Input, Spinner } from "@/components/ui";
-import { supabaseBrowser } from "@/lib/supabase-browser";
 
-export function LoginForm() {
-  const router = useRouter();
+export function LoginForm({ linkError }: { linkError: boolean }) {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
 
-  async function signIn(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    setInfo(null);
-    const { error } = await supabaseBrowser().auth.signInWithPassword({ email: email.trim(), password });
-    if (error) {
-      setError("E-mail ou senha incorretos.");
+    try {
+      const res = await fetch("/api/auth/request-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) setError(json.error ?? "Não foi possível enviar o link agora. Tente de novo em instantes.");
+      else setSent(true);
+    } catch {
+      setError("Sem conexão. Confira a internet e tente de novo.");
+    } finally {
       setBusy(false);
-      return;
     }
-    router.replace("/projects");
-    router.refresh();
   }
 
-  async function magicLink() {
-    if (!email.trim()) {
-      setError("Digite seu e-mail primeiro.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const { error } = await supabaseBrowser().auth.signInWithOtp({
-      email: email.trim(),
-      options: { shouldCreateUser: false, emailRedirectTo: `${location.origin}/auth/callback?next=/projects` },
-    });
-    setBusy(false);
-    // mesma resposta exista ou não a conta: não revela quem é cliente
-    if (error && error.status !== 400 && error.status !== 422) setError("Não foi possível enviar o link agora. Tente de novo em instantes.");
-    else setInfo("Se este e-mail tiver acesso, enviamos um link para entrar. Confira sua caixa de entrada.");
+  if (sent) {
+    return (
+      <div className="space-y-4" id="login-sent">
+        <Alert tone="success">
+          Se <strong>{email.trim()}</strong> tiver acesso, enviamos um link para entrar. Confira a caixa de entrada (e o spam). O link vale por 15 minutos.
+        </Alert>
+        <button type="button" onClick={() => setSent(false)} className="w-full text-center text-sm text-muted underline-offset-4 transition hover:text-fg hover:underline">
+          Usar outro e-mail
+        </button>
+      </div>
+    );
   }
 
   return (
-    <form onSubmit={signIn} className="space-y-4" noValidate>
+    <form onSubmit={submit} className="space-y-4" noValidate>
+      {linkError && <Alert tone="warn">Esse link venceu ou já foi usado. Peça um novo abaixo.</Alert>}
       <div className="space-y-1.5">
-        <label htmlFor="email" className="text-sm text-muted">E-mail</label>
-        <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@empresa.com.br" />
-      </div>
-      <div className="space-y-1.5">
-        <label htmlFor="password" className="text-sm text-muted">Senha</label>
-        <Input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+        <label htmlFor="email" className="text-sm text-muted">
+          E-mail
+        </label>
+        <Input id="email" type="email" autoComplete="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@empresa.com.br" />
       </div>
       {error && <Alert>{error}</Alert>}
-      {info && <Alert tone="success">{info}</Alert>}
-      <Button id="login-submit" type="submit" size="lg" className="w-full" disabled={busy} aria-busy={busy}>
-        {busy ? <Spinner /> : null} Entrar
+      <Button id="login-submit" type="submit" size="lg" className="w-full" disabled={busy || !email.trim()} aria-busy={busy}>
+        {busy ? <Spinner /> : null} Receber link por e-mail
       </Button>
-      <button type="button" id="login-magic-link" onClick={magicLink} disabled={busy} className="w-full text-center text-sm text-muted underline-offset-4 transition hover:text-fg hover:underline disabled:opacity-50">
-        Entrar com link por e-mail / esqueci a senha
-      </button>
+      <p className="text-center text-xs text-muted">Sem senha: a gente manda um link de acesso para o seu e-mail.</p>
     </form>
   );
 }

@@ -1,43 +1,30 @@
 import "server-only";
-import { createServerClient } from "@supabase/ssr";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { cache } from "react";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { ForbiddenError, assertCanRead, assertCanWrite } from "@mercatta/server";
+import { ForbiddenError, assertCanRead, assertCanWrite, createSession, deleteSession, findSession, type SessionUser } from "@mercatta/server";
 import { getDb } from "./db";
 import { serverEnv } from "./env";
 
-/** Cliente do Supabase com a sessão do usuário (cookies): as consultas obedecem à RLS. */
-export async function supabaseForUser() {
-  const store = await cookies();
-  return createServerClient(serverEnv().NEXT_PUBLIC_SUPABASE_URL, serverEnv().NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll: () => store.getAll(),
-      setAll: (list) => {
-        try {
-          for (const { name, value, options } of list) store.set(name, value, options);
-        } catch {
-          // chamado de um Server Component: o proxy já renova a sessão
-        }
-      },
-    },
-  });
+export type { SessionUser };
+
+export const SESSION_COOKIE = "mm_session";
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
-/** Cliente administrativo (ignora a RLS). Só em rotas de servidor, depois de checar permissão. */
-export function supabaseAdmin() {
-  return createAdminClient(serverEnv().NEXT_PUBLIC_SUPABASE_URL, serverEnv().SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-}
-
-export interface SessionUser {
-  id: string;
-  email: string;
-}
-
-export async function currentUser(): Promise<SessionUser | null> {
-  const { data } = await (await supabaseForUser()).auth.getUser();
-  return data.user ? { id: data.user.id, email: data.user.email ?? "" } : null;
-}
+/** Quem está logado nesta requisição (uma consulta por requisição, nos Server Components). */
+export const currentUser = cache(async (): Promise<SessionUser | null> => {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  return findSession(getDb(), token);
+});
 
 /** Para páginas: manda para o login se não houver sessão. */
 export async function requireUser(): Promise<SessionUser> {
@@ -53,13 +40,31 @@ export async function requireApiUser(): Promise<SessionUser> {
   return user;
 }
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
+/** Abre a sessão e grava o cookie (httpOnly: o JavaScript da página nunca enxerga o token). */
+export async function startSession(userId: string): Promise<void> {
+  const userAgent = (await headers()).get("user-agent");
+  const { token, expiresAt } = await createSession(getDb(), userId, userAgent);
+  (await cookies()).set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: serverEnv().APP_URL.startsWith("https://"),
+    path: "/",
+    expires: expiresAt,
+  });
+}
+
+/** Encerra a sessão no banco e apaga o cookie. */
+export async function endSession(): Promise<void> {
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (token) await deleteSession(getDb(), token);
+  store.delete(SESSION_COOKIE);
+}
+
+/** IP de quem fez o pedido (atrás de proxy/Vercel o cabeçalho é preenchido pela própria infraestrutura). */
+export async function clientIp(): Promise<string> {
+  const h = await headers();
+  return h.get("x-real-ip")?.trim() || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "desconhecido";
 }
 
 export async function isPlatformAdmin(userId: string): Promise<boolean> {

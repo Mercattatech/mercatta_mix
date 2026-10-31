@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Alert, Badge, Card } from "@/components/ui";
-import { supabaseForUser } from "@/lib/auth";
 import { getAppContext } from "@/lib/context";
+import { getDb } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Equipe" };
 
@@ -16,16 +16,13 @@ export default async function TeamPage() {
   const ctx = await getAppContext();
   if (!ctx.organization) return <Alert tone="warn">Sua conta ainda não está vinculada a uma empresa.</Alert>;
 
-  const { data } = await (await supabaseForUser())
-    .from("memberships")
-    .select("id, role, user:users(email, name)")
-    .eq("organization_id", ctx.organization.id)
-    .order("created_at", { ascending: true });
-
-  const members = (data ?? []).map((m) => {
-    const u = (Array.isArray(m.user) ? m.user[0] : m.user) as { email: string; name: string | null } | null;
-    return { id: m.id as string, role: m.role as string, email: u?.email ?? "—", name: u?.name ?? null };
-  });
+  const { rows: members } = await getDb().query<{ id: string; role: string; email: string; name: string | null }>(
+    `select m.id, m.role, u.email, u.name
+       from memberships m join users u on u.id = m.user_id
+      where m.organization_id = $1
+      order by m.created_at asc`,
+    [ctx.organization.id],
+  );
 
   return (
     <div className="animate-in space-y-8">

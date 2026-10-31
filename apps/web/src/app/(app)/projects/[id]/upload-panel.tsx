@@ -35,8 +35,8 @@ export function UploadPanel({ projectId, videos, jobs, canWrite }: { projectId: 
     async (type: VideoType, files: File[]) => {
       setNotice(null);
       for (const file of files) {
-        if (!file.type.startsWith("video/") && !/\.(mp4|mov|m4v|webm|mkv)$/i.test(file.name)) {
-          setNotice(`"${file.name}" não parece ser um vídeo. Envie MP4, MOV, WebM ou MKV.`);
+        if (!file.type.startsWith("video/") && !/\.(mp4|mov|mkv)$/i.test(file.name)) {
+          setNotice(`"${file.name}" não parece ser um vídeo. Envie MP4, MOV ou MKV.`);
           continue;
         }
         const duration = await readVideoDuration(file);

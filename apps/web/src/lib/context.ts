@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
-import { isPlatformAdmin, requireUser, supabaseForUser, type SessionUser } from "./auth";
+import { isPlatformAdmin, requireUser, type SessionUser } from "./auth";
+import { getDb } from "./db";
 
 export interface AppContext {
   user: SessionUser;
@@ -12,16 +13,20 @@ export interface AppContext {
 /** Quem é o usuário, qual empresa está ativa e quantos créditos ela tem. Uma consulta por requisição. */
 export const getAppContext = cache(async (): Promise<AppContext> => {
   const user = await requireUser();
-  const supabase = await supabaseForUser();
-  const { data } = await supabase.from("memberships").select("role, organization:organizations(id, name)").eq("user_id", user.id).order("created_at", { ascending: true }).limit(1);
-  const row = data?.[0] as { role: string; organization: { id: string; name: string } | { id: string; name: string }[] | null } | undefined;
-  const org = row ? (Array.isArray(row.organization) ? row.organization[0] : row.organization) : null;
-  const organization = org && row ? { id: org.id, name: org.name, role: row.role } : null;
+  const db = getDb();
+  const m = await db.query<{ id: string; name: string; role: string }>(
+    `select o.id, o.name, m.role
+       from memberships m join organizations o on o.id = m.organization_id
+      where m.user_id = $1 and o.status = 'active'
+      order by m.created_at asc limit 1`,
+    [user.id],
+  );
+  const organization = m.rows[0] ?? null;
 
   let credits: number | null = null;
   if (organization) {
-    const { data: bal } = await supabase.rpc("my_credit_balance", { org: organization.id });
-    credits = bal === null || bal === undefined ? null : Number(bal);
+    const bal = await db.query<{ b: string }>("select credit_balance($1) as b", [organization.id]);
+    credits = Number(bal.rows[0]?.b ?? 0);
   }
   return { user, isAdmin: await isPlatformAdmin(user.id), organization, credits };
 });

@@ -22,6 +22,38 @@ jobs:
         env:
           FORCE_ASS_TEST: "1"
 
+  # As migrations rodam num Postgres de verdade (os testes usam PGlite, que é Postgres em WebAssembly).
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mix
+          POSTGRES_PASSWORD: mix
+          POSTGRES_DB: mix
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mix -d mix"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://mix:mix@localhost:5432/mix
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Aplica as migrations num banco vazio
+        run: npm run db:migrate
+      - name: Rodar de novo não deve aplicar nada (idempotente)
+        run: npm run db:migrate | tee out.txt && grep -q "Nada a aplicar" out.txt
+      - name: Cria o primeiro admin
+        run: npm run db:make-admin -- ci@example.com
+
   worker-image:
     runs-on: ubuntu-latest
     needs: test

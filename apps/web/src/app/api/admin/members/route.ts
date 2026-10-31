@@ -1,8 +1,11 @@
+import { after } from "next/server";
 import { z } from "zod";
-import { UserFacingError } from "@mercatta/server";
+import { UserFacingError, ensureUser, issueLoginLink } from "@mercatta/server";
 import { handle } from "@/lib/api";
-import { requireApiAdmin, supabaseAdmin } from "@/lib/auth";
+import { clientIp, requireApiAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { serverEnv } from "@/lib/env";
+import { loginLinkMail, sendMail } from "@/lib/mailer";
 
 const body = z.object({
   organizationId: z.uuid(),
@@ -10,26 +13,19 @@ const body = z.object({
   role: z.enum(["owner", "editor", "aprovador"]),
 });
 
-/** Admin da plataforma: convida uma pessoa por e-mail e vincula à empresa (limite de 3 pessoas é do banco). */
+/**
+ * Admin da plataforma: convida uma pessoa por e-mail e vincula à empresa (limite de 3 pessoas é do banco).
+ * Cria o usuário (se não existir), vincula e envia um link de acesso que vale 72 h.
+ */
 export function POST(req: Request) {
   return handle(async () => {
     await requireApiAdmin();
     const input = body.parse(await req.json());
     const db = getDb();
-    const org = await db.query("select 1 from organizations where id = $1", [input.organizationId]);
-    if (org.rows.length === 0) throw new UserFacingError("Empresa não encontrada.");
+    const org = (await db.query<{ name: string }>("select name from organizations where id = $1", [input.organizationId])).rows[0];
+    if (!org) throw new UserFacingError("Empresa não encontrada.");
 
-    const admin = supabaseAdmin();
-    const email = input.email.toLowerCase();
-    const existing = await db.query<{ id: string }>("select id from auth.users where lower(email) = $1", [email]);
-    let userId = existing.rows[0]?.id;
-    let invited = false;
-    if (!userId) {
-      const { data, error } = await admin.auth.admin.inviteUserByEmail(email);
-      if (error || !data.user) throw new UserFacingError("Não foi possível enviar o convite. Confira o e-mail e tente de novo.");
-      userId = data.user.id;
-      invited = true;
-    }
+    const { id: userId, created } = await ensureUser(db, input.email);
     try {
       await db.query("insert into memberships (user_id, organization_id, role) values ($1, $2, $3) on conflict (user_id, organization_id) do update set role = excluded.role", [
         userId,
@@ -37,9 +33,23 @@ export function POST(req: Request) {
         input.role,
       ]);
     } catch (e) {
-      if (/limit|limite|3/i.test((e as Error).message)) throw new UserFacingError("Esta empresa já tem 3 pessoas. Remova alguém antes de convidar.");
+      if (/member_limit_reached/i.test((e as Error).message)) throw new UserFacingError("Esta empresa já tem 3 pessoas. Remova alguém antes de convidar.");
       throw e;
     }
-    return { userId, invited };
+
+    const link = await issueLoginLink(db, { email: input.email, ip: await clientIp(), purpose: "invite" });
+    if (link) {
+      const url = `${serverEnv().APP_URL}/auth/verify?token=${encodeURIComponent(link.token)}`;
+      const to = input.email.trim().toLowerCase();
+      after(async () => {
+        try {
+          await sendMail(loginLinkMail({ to, link: url, kind: "invite", organizationName: org.name }));
+        } catch (e) {
+          console.error("[admin] falha ao enviar o convite", e);
+        }
+      });
+    }
+    // `invited`: a pessoa recebeu o e-mail agora; `created`: era a primeira vez dela no sistema
+    return { userId, invited: link !== null, created };
   });
 }

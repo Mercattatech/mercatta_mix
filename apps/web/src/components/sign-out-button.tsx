@@ -1,23 +1,14 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
-import { supabaseBrowser } from "@/lib/supabase-browser";
 
+/** Formulário comum (POST): funciona até sem JavaScript e a rota apaga cookie e sessão. */
 export function SignOutButton() {
-  const router = useRouter();
   return (
-    <Button
-      id="sign-out"
-      variant="ghost"
-      size="sm"
-      onClick={async () => {
-        await supabaseBrowser().auth.signOut();
-        router.replace("/login");
-        router.refresh();
-      }}
-    >
-      Sair
-    </Button>
+    <form action="/api/auth/logout" method="post">
+      <Button id="sign-out" type="submit" variant="ghost" size="sm">
+        Sair
+      </Button>
+    </form>
   );
 }

@@ -87,7 +87,7 @@ function Invite({ orgs }: { orgs: Org[] }) {
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
-          void run("/api/admin/members", { organizationId, email, role }, (j) => (j.invited ? `Convite enviado para ${email}.` : `${email} já tinha conta e foi vinculado.`), () => setEmail(""));
+          void run("/api/admin/members", { organizationId, email, role }, (j) => (j.invited ? `Convite enviado para ${email}.` : `${email} foi vinculado, mas o e-mail não saiu (limite de envios por hora). Tente de novo mais tarde.`), () => setEmail(""));
         }}
       >
         <h2 className="font-display text-lg font-medium">Convidar pessoa</h2>

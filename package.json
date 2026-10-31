@@ -11,7 +11,9 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "db:migrate": "npm run migrate -w @mercatta/db",
+    "db:make-admin": "npm run make-admin -w @mercatta/db --"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

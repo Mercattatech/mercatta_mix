@@ -1,56 +1,24 @@
-import { readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
+import { applyMigrations, MIGRATIONS_DIR } from "./migrate";
 
-const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../supabase/migrations");
+export { MIGRATIONS_DIR };
 
-/** Imita o que o Supabase já traz: schema auth, auth.uid() e os papéis anon/authenticated/service_role. */
-const SUPABASE_STUB = `
-  create schema auth;
-  create table auth.users (
-    id uuid primary key default gen_random_uuid(),
-    email text,
-    raw_user_meta_data jsonb not null default '{}'::jsonb
-  );
-  create function auth.uid() returns uuid language sql stable as $$
-    select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
-  $$;
-  create role anon nologin;
-  create role authenticated nologin;
-  create role service_role nologin bypassrls;
-  grant usage on schema public, auth to anon, authenticated, service_role;
-  grant select on auth.users to service_role;
-  alter default privileges in schema public grant all on tables to service_role;
-  alter default privileges in schema public grant all on sequences to service_role;
-  alter default privileges in schema public grant all on functions to service_role;
-`;
-
+/** Banco de teste em memória (PGlite) com TODAS as migrations do projeto aplicadas pelo executor real — Postgres puro, sem stubs. */
 export async function createTestDb(): Promise<PGlite> {
   const db = new PGlite();
-  await db.exec(SUPABASE_STUB);
-  const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
-  for (const f of files) {
-    try {
-      await db.exec(readFileSync(path.join(MIGRATIONS_DIR, f), "utf8"));
-    } catch (e) {
-      throw new Error(`Falha na migration ${f}: ${(e as Error).message}`);
-    }
-  }
+  await applyMigrations({ exec: (s) => db.exec(s), query: (s, p) => db.query(s, p as unknown[] | undefined) });
   return db;
 }
 
-export type Role = "anon" | "authenticated" | "service_role";
-
 /**
- * Executa `fn` como um usuário do Supabase (papel + JWT sub) dentro de uma transação que SEMPRE é desfeita,
- * para que um erro de RLS num teste não contamine o próximo.
+ * Executa `fn` como um usuário comum (papel `app_user` + `app.user_id`) dentro de uma transação que SEMPRE é desfeita,
+ * para que um erro de RLS num teste não contamine o próximo. `userId = null` simula uma sessão sem usuário.
  */
-export async function asUser<T>(db: PGlite, userId: string | null, fn: (q: Q) => Promise<T>, role: Role = "authenticated"): Promise<T> {
+export async function asUser<T>(db: PGlite, userId: string | null, fn: (q: Q) => Promise<T>): Promise<T> {
   await db.exec("begin");
   try {
-    await db.exec(`set local role ${role}`);
-    await db.query("select set_config('request.jwt.claim.sub', $1, true)", [userId ?? ""]);
+    await db.exec("set local role app_user");
+    await db.query("select set_config('app.user_id', $1, true)", [userId ?? ""]);
     const q: Q = async (sql, params) => (await db.query(sql, params as unknown[] | undefined)).rows as Record<string, unknown>[];
     return await fn(q);
   } finally {
