@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+/* Mercatta Mix — sistema de design. Escuro por padrão, violeta + coral como destaque. */
+:root {
+  --bg: #090910;
+  --surface: #11111b;
+  --surface-2: #181826;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --fg: #eeedf7;
+  --muted: #9391ab;
+  --primary: #8b5cf6;
+  --primary-2: #a78bfa;
+  --accent: #ff7a59;
+  --success: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --radius: 16px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-2: var(--primary-2);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-outfit), var(--font-inter), ui-sans-serif, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(900px 500px at 12% -10%, rgba(139, 92, 246, 0.18), transparent 60%),
+    radial-gradient(700px 420px at 100% 0%, rgba(255, 122, 89, 0.12), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.4);
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(14px);
+}
+
+.gradient-text {
+  background: linear-gradient(100deg, #c4b5fd 0%, #8b5cf6 40%, #ff7a59 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn-glow {
+  background-image: linear-gradient(100deg, #7c3aed, #8b5cf6 45%, #ff7a59);
+  box-shadow: 0 8px 30px -8px rgba(139, 92, 246, 0.6);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.btn-glow:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 36px -8px rgba(139, 92, 246, 0.75);
+  filter: brightness(1.08);
+}
+.btn-glow:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fade-up 0.35s ease both;
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in, .shimmer { animation: none; }
+  .btn-glow { transition: none; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary-2);
+  outline-offset: 2px;
+}
+
+/* Palavra selecionável da transcrição */
+.word-chip {
+  border-radius: 8px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.word-chip:hover { background: rgba(139, 92, 246, 0.25); }
+.word-chip[data-in-range="true"] { background: rgba(139, 92, 246, 0.45); color: #fff; }
+.word-chip[data-used="true"] { box-shadow: inset 0 -2px 0 var(--accent); }

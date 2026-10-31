@@ -1,0 +1,29 @@
+{
+  "name": "@mercatta/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/lib-storage": "^3.1161.0",
+    "@aws-sdk/s3-request-presigner": "^3.1161.0",
+    "@mercatta/core": "*",
+    "@mercatta/server": "*",
+    "archiver": "^8.0.0",
+    "pg": "^8.23.1",
+    "pg-boss": "^12.38.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "@mercatta/db": "*",
+    "@types/archiver": "^8.0.0",
+    "@types/pg": "^8.23.1"
+  }
+}

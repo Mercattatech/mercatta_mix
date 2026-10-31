@@ -1,0 +1,25 @@
+{
+  "name": "mercatta-mix",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mercatta Mix: do vídeo bruto ao Reel combinado, legendado, publicado e medido.",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

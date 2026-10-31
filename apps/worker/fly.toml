@@ -1,0 +1,21 @@
+# Worker do Mercatta Mix (renderização + transcrição). Sem site: só processa a fila.
+# Deploy (a partir da raiz do repositório):
+#   fly launch --no-deploy --copy-config --config apps/worker/fly.toml --dockerfile apps/worker/Dockerfile
+#   fly secrets set --config apps/worker/fly.toml DATABASE_URL=... R2_ACCOUNT_ID=... (veja .env.example)
+#   fly deploy --config apps/worker/fly.toml --dockerfile apps/worker/Dockerfile
+app = "mercatta-mix-worker"
+primary_region = "gru" # São Paulo
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  STORAGE_DRIVER = "r2"
+  TRANSCRIBER = "faster-whisper"
+  WORKER_CONCURRENCY = "1"
+  TMP_DIR = "/tmp/work"
+
+# 1 máquina fixa na Fase 1 (a fila é no Postgres). Render 1080×1920 + whisper pedem CPU e memória.
+[[vm]]
+  size = "performance-2x"
+  memory = "4gb"
