@@ -32,7 +32,7 @@ export class FasterWhisperTranscriber implements Transcriber {
   readonly model: string;
   private readonly whisperModel: string;
   constructor(
-    whisperModel = process.env.WHISPER_MODEL ?? "small",
+    whisperModel = process.env.WHISPER_MODEL ?? "large-v3-turbo",
     private readonly python = process.env.PYTHON_BIN ?? "python3",
     private readonly script = path.join(HERE, "../python/transcribe.py"),
     align = process.env.WHISPER_ALIGN !== "off",
