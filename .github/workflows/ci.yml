@@ -17,6 +17,8 @@ jobs:
       # ffmpeg do Ubuntu tem libass: roda também o teste de legenda queimada
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
       - run: npm ci
+      # dependências de produção sem vulnerabilidade conhecida (o aviso restante é só da ferramenta ESLint, de desenvolvimento)
+      - run: npm audit --omit=dev
       - run: npm run typecheck
       - run: npm test
         env:
@@ -51,8 +53,16 @@ jobs:
         run: npm run db:migrate
       - name: Rodar de novo não deve aplicar nada (idempotente)
         run: npm run db:migrate | tee out.txt && grep -q "Nada a aplicar" out.txt
-      - name: Cria o primeiro admin
-        run: npm run db:make-admin -- ci@example.com
+      - name: Cria o primeiro admin e imprime o link de acesso
+        run: APP_URL=https://exemplo.com.br npm run db:make-admin -- ci@example.com | tee out2.txt && grep -q "https://exemplo.com.br/auth/verify?token=" out2.txt
+
+  # Imagens de produção (Coolify). Construir aqui é a validação: o desenvolvimento local não tem Docker.
+  web-image:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f apps/web/Dockerfile -t mercatta-web .
 
   worker-image:
     runs-on: ubuntu-latest
@@ -60,3 +70,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f apps/worker/Dockerfile -t mercatta-worker .
+
+  compose-coolify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Valida a sintaxe do docker-compose.coolify.yml
+        run: docker compose -f docker-compose.coolify.yml config -q
+        env:
+          SERVICE_USER_POSTGRES: ci
+          SERVICE_PASSWORD_64_POSTGRES: ci-senha
+          SERVICE_URL_WEB_3000: https://exemplo.com.br
+          SETTINGS_ENCRYPTION_KEY: ci

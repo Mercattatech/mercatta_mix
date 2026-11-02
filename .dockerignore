@@ -7,4 +7,7 @@ tmp
 .env
 .env.*
 !.env.example
-apps/web
+**/.venv
+**/__pycache__
+**/*.tsbuildinfo
+README.md

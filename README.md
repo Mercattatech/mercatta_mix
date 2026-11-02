@@ -11,12 +11,12 @@ Diferencial: o **Combinador** — 3 ganchos × 2 miolos × 2 chamadas = 12 víde
 
 | Pasta | O que é |
 |---|---|
-| `apps/web` | Site (Next.js 16, React 19, Tailwind v4) + rotas de API. Vai para a Vercel (ou qualquer host Node). |
-| `apps/worker` | Processa a fila: pré-processa, transcreve (faster-whisper), renderiza (FFmpeg + libass), monta ZIP. Docker (Fly.io). |
+| `apps/web` | Site (Next.js 16, React 19, Tailwind v4) + rotas de API. Imagem Docker em `apps/web/Dockerfile`. |
+| `apps/worker` | Processa a fila: pré-processa, transcreve (faster-whisper large-v3-turbo + alinhamento wav2vec2), renderiza (FFmpeg + libass), monta ZIP. Imagem Docker em `apps/worker/Dockerfile`. |
 | `packages/core` | Regras puras e testadas: combinações, cortes no limite da palavra, linha do tempo em quadros, legenda ASS, comandos FFmpeg. |
 | `packages/db` | Executor de migrations (`db:migrate`), script do primeiro admin e testes do banco (RLS, créditos, LGPD) com PGlite. |
 | `packages/server` | Casos de uso compartilhados por site e worker: login/sessões, uploads, combinações, renders, fila pg-boss. |
-| `db/migrations` | `0001_core.sql`, `0002_editing.sql`, `0003_auth.sql` — aplicadas em ordem pelo `npm run db:migrate`. |
+| `db/migrations` | `0001_core.sql` … `0004_mail_settings.sql` — aplicadas em ordem pelo `npm run db:migrate`. |
 
 ## Como rodar (desenvolvimento)
 
@@ -30,7 +30,7 @@ Requisitos: Node ≥ 22.12, FFmpeg no PATH e um Postgres 15+ (16 recomendado). N
    Em dev: `STORAGE_DRIVER=local` com o **mesmo caminho absoluto** de `LOCAL_STORAGE_DIR` nos dois, e `MAIL_DRIVER=console`.
    `DATABASE_URL` deve ser a conexão **direta** (porta 5432), nunca pooler em modo transaction.
 4. **Banco:** `npm run db:migrate` (aplica as migrations pendentes; pode rodar quantas vezes quiser).
-5. **Primeiro admin:** `npm run db:make-admin -- seu@email.com`
+5. **Primeiro admin:** `npm run db:make-admin -- seu@email.com` (com `APP_URL` no `.env`, o comando também imprime um **link de acesso de uso único**, válido por 30 min — serve para entrar sem e-mail configurado).
 6. **Rode** (dois terminais):
    ```bash
    npm run start -w @mercatta/worker
@@ -39,7 +39,14 @@ Requisitos: Node ≥ 22.12, FFmpeg no PATH e um Postgres 15+ (16 recomendado). N
 7. Abra `http://localhost:3000`, digite o e-mail do admin: com `MAIL_DRIVER=console` o **link de acesso aparece no terminal do site**. Clique em "Entrar".
 8. Em **Admin**: crie uma empresa com créditos e convide as pessoas (o convite sai por e-mail e vale 72 h). Depois crie um projeto.
 
-> Transcrição local: o worker usa Python com `faster-whisper` (veja o `Dockerfile`). Sem ele, use `TRANSCRIBER=openai` + `OPENAI_API_KEY`.
+> Transcrição local: o worker usa Python com `faster-whisper` + `whisperx` (veja `apps/worker/python/requirements.txt` e `apps/worker/python/bench/RESULTADOS.md`). Crie o ambiente com `python3.11 -m venv apps/worker/python/.venv && apps/worker/python/.venv/bin/pip install -r apps/worker/python/requirements.txt` e aponte `PYTHON_BIN` para ele. Sem isso, use `TRANSCRIBER=openai` + `OPENAI_API_KEY`.
+
+## E-mail (SMTP universal)
+
+O dono cadastra o SMTP em **Admin → E-mail** (Gmail, Hostinger, Resend, Brevo, SendGrid, Mailgun, SES, Microsoft, Zoho ou qualquer outro). A senha fica **cifrada (AES-256-GCM)** no banco com a chave `SETTINGS_ENCRYPTION_KEY` e nunca volta para a tela; há botão de teste.
+
+- **Gmail:** não aceita a senha normal da conta. Ative a verificação em duas etapas e crie uma **senha de app** em <https://myaccount.google.com/apppasswords>; use `smtp.gmail.com`, porta 465 (SSL) ou 587 (STARTTLS).
+- Gere a chave com `openssl rand -base64 32` e guarde-a: se mudar, a senha do SMTP precisa ser cadastrada de novo.
 
 ## Como funciona o login
 
@@ -65,19 +72,34 @@ npm run lint
 - Os testes de banco usam PGlite (Postgres em WebAssembly). O CI também aplica as migrations num **Postgres 16 de verdade** (job `postgres-migrations`).
 - A legenda queimada (libass) só é testada onde o FFmpeg tem libass: no Docker/CI (`FORCE_ASS_TEST=1`).
 
-## Como publicar (produção)
+## Deploy na VPS com Coolify
 
-1. **Postgres:** qualquer Postgres 15+ (próprio, Neon, RDS, Railway…). Defina `DATABASE_URL` (conexão direta) no site e no worker e rode `npm run db:migrate` a cada deploy que traga migration nova. Faça backup diário.
-2. **E-mail:** crie uma conta SMTP (Resend, Brevo, SES…), verifique o domínio e defina `MAIL_DRIVER=smtp`, `SMTP_URL` e `MAIL_FROM`. Com `MAIL_DRIVER=console` o site recusa subir em produção.
-3. **Cloudflare R2:** crie o bucket e uma chave de API. CORS do bucket:
-   ```json
-   [{ "AllowedOrigins": ["https://SEU-DOMINIO"], "AllowedMethods": ["PUT", "GET"], "AllowedHeaders": ["*"], "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600 }]
+O arquivo [`docker-compose.coolify.yml`](docker-compose.coolify.yml) sobe tudo numa VPS só: **Postgres 16**, **site**, **worker** e volumes (banco e arquivos). Armazenamento em disco (`STORAGE_DRIVER=local`): não precisa de Cloudflare R2.
+
+> Atenção: as imagens só foram construídas no CI (o Mac de desenvolvimento não tem Docker). O site em modo `standalone` foi testado localmente contra um Postgres real; o build do Docker e o compose ainda precisam de um primeiro deploy para serem confirmados.
+
+1. **Requisitos da VPS:** 4 vCPU e **8 GB de RAM** recomendados (o `large-v3-turbo` + alinhador usam ~3 GB durante a transcrição, além do FFmpeg); disco para os vídeos e a imagem do worker (~6 GB).
+2. **DNS:** aponte um (sub)domínio, ex. `mix.grupomercatta.com.br`, para o IP da VPS (registro A).
+3. **Coolify:** *Projects → New Resource → Docker Compose* (repositório `https://github.com/Mercattatech/mercatta_mix.git`, branch `main`). Em *Docker Compose Location* informe `/docker-compose.coolify.yml`.
+4. **Domínio:** no serviço `web`, coloque `https://mix.seudominio.com.br`. O Coolify cuida do certificado (Traefik).
+5. **Variáveis** (aba *Environment Variables*): `SETTINGS_ENCRYPTION_KEY` (obrigatória; `openssl rand -base64 32`). Usuário e senha do Postgres o Coolify gera sozinho.
+6. **Deploy.** O worker aplica as migrations sozinho ao iniciar (protegido por lock no Postgres).
+7. **Primeiro admin:** no Coolify, abra o terminal do serviço `worker` e rode:
+   ```bash
+   APP_URL=https://mix.seudominio.com.br npx tsx packages/db/src/cli.ts make-admin seu@email.com
    ```
-   O `ExposeHeaders: ETag` é obrigatório: sem ele o envio em partes não fecha.
-4. **Site:** defina `APP_URL` (https, sem barra no fim) e as demais variáveis do `.env.example` (`STORAGE_DRIVER=r2`). Na Vercel: *Root Directory* `apps/web`.
-5. **Worker (Fly.io):** `fly launch --no-deploy --copy-config --config apps/worker/fly.toml`, `fly secrets set ...` com as variáveis do worker, `fly deploy --config apps/worker/fly.toml --dockerfile apps/worker/Dockerfile .`
-6. **Primeiro admin:** `DATABASE_URL=... npm run db:make-admin -- seu@email.com`.
-7. **CI:** `.github/workflows/ci.yml` roda typecheck, testes (com libass), migrations em Postgres real e o build do Docker.
+   Ele imprime um link de acesso de uso único (30 min). Entre, vá em **Admin → E-mail**, cadastre o SMTP e teste.
+8. **Backups:** agende backup do volume do Postgres (`pgdata`) e dos arquivos (`storage`) no Coolify; sem backup, perder a VPS é perder tudo.
+
+### Outras formas de publicar
+
+- **Cloudflare R2** (para trocar o disco por armazenamento de objetos): crie o bucket e uma chave de API, use `STORAGE_DRIVER=r2` e as variáveis `R2_*`. CORS do bucket:
+  ```json
+  [{ "AllowedOrigins": ["https://SEU-DOMINIO"], "AllowedMethods": ["PUT", "GET"], "AllowedHeaders": ["*"], "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600 }]
+  ```
+  O `ExposeHeaders: ETag` é obrigatório: sem ele o envio em partes não fecha.
+- **Fly.io (worker):** `apps/worker/fly.toml` foi mantido só como referência; o alvo atual é o Coolify.
+- **CI:** `.github/workflows/ci.yml` roda `npm audit --omit=dev`, typecheck, testes (com libass), migrations em Postgres real, build das duas imagens Docker e valida o compose.
 
 ## LGPD e segurança (resumo)
 

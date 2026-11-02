@@ -1,0 +1,64 @@
+# Mercatta Mix em produção — Coolify (Docker Compose) ou `docker compose -f docker-compose.coolify.yml up -d`.
+# Passo a passo no README ("Deploy na VPS com Coolify").
+#
+# No Coolify: Projeto → New Resource → Docker Compose (repositório Git) → arquivo "docker-compose.coolify.yml".
+# Coolify gera usuário/senha do Postgres e o domínio do site (variáveis SERVICE_*). Defina em "Environment Variables":
+#   SETTINGS_ENCRYPTION_KEY   (obrigatória; gere com: openssl rand -base64 32 — guarde, pois cifra a senha do SMTP)
+# Opcional: HF_TOKEN não é necessário (modelos públicos), WORKER_CONCURRENCY (padrão 1).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SERVICE_USER_POSTGRES}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+      POSTGRES_DB: mix
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d mix"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # A variável mágica SERVICE_URL_WEB_3000 faz o Coolify ligar o domínio ao serviço "web" (porta 3000) e preencher a URL pública (https://...)
+      APP_URL: ${SERVICE_URL_WEB_3000}
+      DATABASE_URL: postgres://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/mix
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?defina SETTINGS_ENCRYPTION_KEY}
+      MAIL_DRIVER: console
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: /data/storage
+    volumes:
+      - storage:/data/storage
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/mix
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: /data/storage
+      TRANSCRIBER: faster-whisper
+      WHISPER_MODEL: large-v3-turbo
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+    volumes:
+      - storage:/data/storage
+
+volumes:
+  pgdata:
+  storage:
