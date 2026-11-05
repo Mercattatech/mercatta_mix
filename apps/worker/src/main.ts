@@ -20,9 +20,9 @@ async function main() {
       : new LocalObjectStore(path.resolve(cfg.LOCAL_STORAGE_DIR));
   const transcriber: Transcriber = cfg.TRANSCRIBER === "openai" ? new OpenAiWhisperTranscriber(cfg.OPENAI_API_KEY!) : new FasterWhisperTranscriber();
 
-  const canBurnCaptions = await hasAssFilter();
-  if (!canBurnCaptions) {
-    console.log(JSON.stringify({ msg: "worker.info", note: "FFmpeg sem filtro ass (libass); renderizando sem queima de legenda neste ambiente." }));
+  const hasLibass = await hasAssFilter();
+  if (!hasLibass) {
+    console.log(JSON.stringify({ msg: "worker.info", note: "FFmpeg sem libass; usando motor de legenda via overlay PNG (Pillow)." }));
   }
 
   const deps: WorkerDeps = {
@@ -30,7 +30,7 @@ async function main() {
     store,
     transcriber,
     tmpRoot: path.resolve(cfg.TMP_DIR),
-    burnCaptions: canBurnCaptions,
+    burnCaptions: true,
     ...(cfg.FONTS_DIR ? { fontsDir: cfg.FONTS_DIR } : {}),
   };
 

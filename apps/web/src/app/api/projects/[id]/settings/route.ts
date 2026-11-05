@@ -58,3 +58,4 @@ export function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
     return { ok: true, settings: newSettings, editingInstructions: newInstructions };
   });
 }
+

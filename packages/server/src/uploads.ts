@@ -151,12 +151,21 @@ export async function createSegment(db: Db, input: NewSegment): Promise<{ id: st
 }
 
 /** Prepara o job do ZIP com os vídeos prontos (ou os escolhidos). Mesmo conjunto = mesmo job. */
-export async function prepareZip(db: Db, input: { organizationId: string; projectId: string; renderIds?: string[] }): Promise<{ jobId: string; renderIds: string[] }> {
+export async function prepareZip(
+  db: Db,
+  input: { organizationId: string; projectId: string; renderIds?: string[] },
+): Promise<{ jobId: string; renderIds: string[]; status: string; needsWork: boolean }> {
   return db.transaction(async (tx) => {
     const rows = (
       await tx.query<{ id: string }>(
-        `select id from renders where organization_id = $1 and project_id = $2 and status = 'succeeded'
-            and ($3::uuid[] is null or id = any($3::uuid[])) order by id`,
+        `select id from (
+           select distinct on (combination_id) id, created_at
+             from renders
+            where organization_id = $1 and project_id = $2 and status = 'succeeded'
+              and ($3::uuid[] is null or id = any($3::uuid[]))
+            order by combination_id, created_at desc
+         ) latest
+         order by id`,
         [input.organizationId, input.projectId, input.renderIds ?? null],
       )
     ).rows;
@@ -169,10 +178,14 @@ export async function prepareZip(db: Db, input: { organizationId: string; projec
       idempotencyKey: jobIdempotencyKey("zip", { projectId: input.projectId, renderIds }),
       payload: { renderIds },
     });
+    let status = job.status;
+    let needsWork = job.created;
     // job falho/cancelado de um ZIP igual: volta para a fila
     if (!job.created && (job.status === "failed" || job.status === "canceled")) {
       await tx.query("update jobs set status = 'queued', progress = 0, error_pt = null, finished_at = null where organization_id = $1 and id = $2", [input.organizationId, job.id]);
+      status = "queued";
+      needsWork = true;
     }
-    return { jobId: job.id, renderIds };
+    return { jobId: job.id, renderIds, status, needsWork };
   });
 }

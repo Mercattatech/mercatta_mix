@@ -1,10 +1,13 @@
 import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   buildAss,
+  buildCaptionEvents,
   buildLoudnormMeasureArgs,
   buildPreprocessArgs,
   buildRenderArgs,
+  DEFAULT_CAPTION_STYLE,
   parseLoudnormJson,
   parseProbe,
   type CaptionStyle,
@@ -18,6 +21,8 @@ import { run } from "./exec";
 
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
 const FFPROBE = process.env.FFPROBE_PATH ?? "ffprobe";
+const PYTHON = process.env.PYTHON_BIN ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../python/.venv/bin/python");
+const RENDER_CAPTIONS_PY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../python/render_captions.py");
 
 export async function probe(file: string): Promise<ProbeInfo> {
   const { stdout } = await run(FFPROBE, ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", file]);
@@ -68,20 +73,42 @@ export interface RenderVariationInput {
   fadeMs?: number;
 }
 
-/** Renderiza uma variação: escreve o ASS, monta o comando único e executa com cwd no diretório de trabalho. */
+let cachedAssFilter: boolean | undefined;
+
+/** Renderiza uma variação: escreve o ASS (ou overlay PNG caso FFmpeg não tenha libass), monta o comando único e executa com cwd no diretório de trabalho. */
 export async function renderVariation(input: RenderVariationInput): Promise<void> {
   await mkdir(input.workDir, { recursive: true });
   let assFileName: string | undefined;
   let fontsDirName: string | undefined;
+  let overlayConcatFile: string | undefined;
 
   if (input.captions !== false && input.timeline.captionWords.length > 0) {
-    assFileName = "subs.ass";
-    await writeFile(path.join(input.workDir, assFileName), buildAss(input.timeline.captionWords, input.captions?.style));
-    const fontsDir = input.captions?.fontsDir;
-    if (fontsDir) {
-      fontsDirName = "fonts";
-      await mkdir(path.join(input.workDir, fontsDirName), { recursive: true });
-      for (const f of await readdir(fontsDir)) await copyFile(path.join(fontsDir, f), path.join(input.workDir, fontsDirName, f));
+    const useAss = await hasAssFilter();
+    if (useAss) {
+      assFileName = "subs.ass";
+      await writeFile(path.join(input.workDir, assFileName), buildAss(input.timeline.captionWords, input.captions?.style));
+      const fontsDir = input.captions?.fontsDir;
+      if (fontsDir) {
+        fontsDirName = "fonts";
+        await mkdir(path.join(input.workDir, fontsDirName), { recursive: true });
+        for (const f of await readdir(fontsDir)) await copyFile(path.join(fontsDir, f), path.join(input.workDir, fontsDirName, f));
+      }
+    } else {
+      const style = { ...DEFAULT_CAPTION_STYLE, ...input.captions?.style };
+      const events = buildCaptionEvents(input.timeline.captionWords, style);
+      const specPath = path.join(input.workDir, "captions_input.json");
+      await writeFile(
+        specPath,
+        JSON.stringify({
+          workDir: input.workDir,
+          events,
+          style,
+          totalDurationMs: input.timeline.totalDurationMs,
+          ...(input.captions?.fontsDir ? { fontsDir: input.captions.fontsDir } : {}),
+        }),
+      );
+      await run(PYTHON, [RENDER_CAPTIONS_PY, specPath]);
+      overlayConcatFile = "subs.ffconcat";
     }
   }
 
@@ -91,6 +118,7 @@ export async function renderVariation(input: RenderVariationInput): Promise<void
     timeline: input.timeline,
     ...(assFileName ? { assFileName } : {}),
     ...(fontsDirName ? { fontsDirName } : {}),
+    ...(overlayConcatFile ? { overlayConcatFile } : {}),
     ...(input.fadeMs !== undefined ? { fadeMs: input.fadeMs } : {}),
     outPath: outName,
   });
@@ -100,6 +128,8 @@ export async function renderVariation(input: RenderVariationInput): Promise<void
 
 /** O FFmpeg local tem o filtro `ass` (libass)? */
 export async function hasAssFilter(): Promise<boolean> {
+  if (cachedAssFilter !== undefined) return cachedAssFilter;
   const { stdout } = await run(FFMPEG, ["-hide_banner", "-filters"]);
-  return /\bass\b/.test(stdout.toString());
+  cachedAssFilter = /\bass\b/.test(stdout.toString());
+  return cachedAssFilter;
 }

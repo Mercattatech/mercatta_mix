@@ -25,3 +25,4 @@ export function POST(req: Request) {
     return updatePricingConfig(getDb(), input);
   });
 }
+

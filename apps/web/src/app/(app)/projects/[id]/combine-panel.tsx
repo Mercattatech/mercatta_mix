@@ -49,19 +49,11 @@ function computeScaleCounts(total: number) {
   if (total === 2) {
     return { small: 1, medium: 2, total: 2 };
   }
-  if (total === 3) {
-    return { small: 1, medium: 2, total: 3 };
-  }
-  if (total <= 8) {
-    return {
-      small: Math.max(1, Math.round(total * 0.3)),
-      medium: Math.max(2, Math.round(total * 0.6)),
-      total,
-    };
-  }
+  const small = Math.max(1, Math.round(total / 3));
+  const medium = Math.max(small + 1, Math.min(total, Math.round((total * 2) / 3)));
   return {
-    small: Math.max(3, Math.min(10, Math.round(total * 0.2))),
-    medium: Math.max(5, Math.min(30, Math.round(total * 0.5))),
+    small,
+    medium,
     total,
   };
 }
@@ -159,21 +151,30 @@ export function CombinePanel({
   const creditsNeeded = Math.max(1, Math.round(rawCost * (1 - discountPercent / 100)));
   const notEnough = preview !== null && credits !== null && creditsNeeded > credits;
 
-  async function saveProjectSettings() {
+  async function saveProjectSettings(overrides: Partial<{
+    editingInstructions: string;
+    useBrolls: boolean;
+    burnCaptions: boolean;
+    fontName: string;
+    fontSize: number;
+    highlightColor: string;
+    captionMode: "karaoke" | "static";
+    captionPosition: "top" | "middle" | "bottom";
+  }> = {}) {
     try {
       await fetch(`/api/projects/${projectId}/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          editingInstructions,
-          useBrolls,
-          burnCaptions,
+          editingInstructions: overrides.editingInstructions ?? editingInstructions,
+          useBrolls: overrides.useBrolls ?? useBrolls,
+          burnCaptions: overrides.burnCaptions ?? burnCaptions,
           captionStyle: {
-            fontName,
-            fontSize,
-            highlightColor,
-            mode: captionMode,
-            position: captionPosition,
+            fontName: overrides.fontName ?? fontName,
+            fontSize: overrides.fontSize ?? fontSize,
+            highlightColor: overrides.highlightColor ?? highlightColor,
+            mode: overrides.captionMode ?? captionMode,
+            position: overrides.captionPosition ?? captionPosition,
           },
         }),
       });
@@ -294,8 +295,9 @@ export function CombinePanel({
                 type="checkbox"
                 checked={burnCaptions}
                 onChange={(e) => {
-                  setBurnCaptions(e.target.checked);
-                  void saveProjectSettings();
+                  const val = e.target.checked;
+                  setBurnCaptions(val);
+                  void saveProjectSettings({ burnCaptions: val });
                 }}
                 className="size-4 rounded accent-primary cursor-pointer"
               />
@@ -311,8 +313,9 @@ export function CombinePanel({
                 <select
                   value={fontName}
                   onChange={(e) => {
-                    setFontName(e.target.value);
-                    void saveProjectSettings();
+                    const val = e.target.value;
+                    setFontName(val);
+                    void saveProjectSettings({ fontName: val });
                   }}
                   className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
                 >
@@ -330,8 +333,9 @@ export function CombinePanel({
                 <select
                   value={captionMode}
                   onChange={(e) => {
-                    setCaptionMode(e.target.value as "karaoke" | "static");
-                    void saveProjectSettings();
+                    const val = e.target.value as "karaoke" | "static";
+                    setCaptionMode(val);
+                    void saveProjectSettings({ captionMode: val });
                   }}
                   className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
                 >
@@ -346,8 +350,9 @@ export function CombinePanel({
                 <select
                   value={highlightColor}
                   onChange={(e) => {
-                    setHighlightColor(e.target.value);
-                    void saveProjectSettings();
+                    const val = e.target.value;
+                    setHighlightColor(val);
+                    void saveProjectSettings({ highlightColor: val });
                   }}
                   className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
                 >
@@ -365,8 +370,9 @@ export function CombinePanel({
                 <select
                   value={captionPosition}
                   onChange={(e) => {
-                    setCaptionPosition(e.target.value as "top" | "middle" | "bottom");
-                    void saveProjectSettings();
+                    const val = e.target.value as "top" | "middle" | "bottom";
+                    setCaptionPosition(val);
+                    void saveProjectSettings({ captionPosition: val });
                   }}
                   className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
                 >
@@ -392,8 +398,9 @@ export function CombinePanel({
                 type="checkbox"
                 checked={useBrolls}
                 onChange={(e) => {
-                  setUseBrolls(e.target.checked);
-                  void saveProjectSettings();
+                  const val = e.target.checked;
+                  setUseBrolls(val);
+                  void saveProjectSettings({ useBrolls: val });
                 }}
                 className="size-4 rounded accent-primary cursor-pointer"
               />
@@ -432,7 +439,7 @@ export function CombinePanel({
             <div>
               <h3 className="text-base font-semibold text-fg">Pacotes de Combinações</h3>
               <p className="text-xs text-muted">
-                Escolha o pacote desejado para gerar os vídeos deste lote. Todos os vídeos do pacote serão gerados e ficarão disponíveis para download imediato em ZIP.
+                Os pacotes são divididos em terços das combinações possíveis (1/3, 2/3 e 3/3). Todos os vídeos do pacote escolhido serão gerados e liberados para download em ZIP.
               </p>
             </div>
 
@@ -455,7 +462,7 @@ export function CombinePanel({
                     {scaleCounts.small} {scaleCounts.small === 1 ? "vídeo" : "vídeos"}
                   </Badge>
                 </div>
-                <p className="mt-2 text-xs text-muted">Amostra rápida para validar ganchos e CTAs</p>
+                <p className="mt-2 text-xs text-muted">1/3 das combinações possíveis (alta cobertura)</p>
                 <div className="mt-3 font-display text-sm font-semibold text-primary">
                   ✦ {Math.max(1, Math.round(scaleCounts.small * perVideoCredits * (1 - (pricing?.packageSmallDiscount ?? 0) / 100)))}{" "}
                   créditos {pricing?.packageSmallDiscount ? `(${pricing.packageSmallDiscount}% off)` : ""}
@@ -480,7 +487,7 @@ export function CombinePanel({
                     {scaleCounts.medium} {scaleCounts.medium === 1 ? "vídeo" : "vídeos"}
                   </Badge>
                 </div>
-                <p className="mt-2 text-xs text-muted">Variedade equilibrada cobrindo as mensagens</p>
+                <p className="mt-2 text-xs text-muted">2/3 das combinações possíveis (escala intermediária)</p>
                 <div className="mt-3 font-display text-sm font-semibold text-primary">
                   ✦ {Math.max(1, Math.round(scaleCounts.medium * perVideoCredits * (1 - (pricing?.packageMediumDiscount ?? 10) / 100)))}{" "}
                   créditos {pricing?.packageMediumDiscount ? `(${pricing.packageMediumDiscount}% off)` : ""}
@@ -505,7 +512,7 @@ export function CombinePanel({
                     {scaleCounts.total} {scaleCounts.total === 1 ? "vídeo" : "vídeos"}
                   </Badge>
                 </div>
-                <p className="mt-2 text-xs text-muted">100% de todas as combinações possíveis</p>
+                <p className="mt-2 text-xs text-muted">3/3 (100% de todas as combinações possíveis)</p>
                 <div className="mt-3 font-display text-sm font-semibold text-primary">
                   ✦ {Math.max(1, Math.round(scaleCounts.total * perVideoCredits * (1 - (pricing?.packageTotalDiscount ?? 20) / 100)))}{" "}
                   créditos {pricing?.packageTotalDiscount ? `(${pricing.packageTotalDiscount}% off)` : ""}

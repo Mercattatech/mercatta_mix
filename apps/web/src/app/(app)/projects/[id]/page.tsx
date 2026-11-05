@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ForbiddenError, assertCanRead, assertCanWrite, getPricingConfig } from "@mercatta/server";
+import { ForbiddenError, assertCanRead, assertCanWrite, ensureDefaultSegments, getPricingConfig } from "@mercatta/server";
 import { Alert, Badge } from "@/components/ui";
 import { getAppContext } from "@/lib/context";
 import { getDb } from "@/lib/db";
@@ -42,11 +42,20 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   if (!project || !(await can(() => assertCanRead(db, ctx.user.id, project.organization_id)))) notFound();
   const canWrite = await can(() => assertCanWrite(db, ctx.user.id, project.organization_id));
 
+  await ensureDefaultSegments(db, project.organization_id, id);
+
   const [videosRes, segmentsRes, combosRes, rendersRes, jobsRes, balanceRes, pricing] = await Promise.all([
     db.query<VideoRow>("select id, type, original_filename, status, error_pt, duration_ms, sort_order from source_videos where project_id = $1 order by sort_order, created_at", [id]),
     db.query<SegmentRow>("select id, source_video_id, type, start_word_idx, end_word_idx, start_ms, end_ms, label from segments where project_id = $1 order by sort_order, created_at", [id]),
     db.query<{ id: string; code: string }>("select id, code from combinations where project_id = $1", [id]),
-    db.query<Omit<RenderRow, "code">>("select id, combination_id, status, duration_ms, error_pt from renders where project_id = $1", [id]),
+    db.query<Omit<RenderRow, "code">>(
+      `select distinct on (r.combination_id) r.id, r.combination_id, r.status, r.duration_ms, r.error_pt
+         from renders r
+         join combinations c on c.id = r.combination_id
+        where r.project_id = $1
+        order by r.combination_id, (r.plan_hash = c.plan_hash) desc, r.created_at desc`,
+      [id],
+    ),
     db.query<Omit<JobRow, "created_at"> & { created_at: Date }>(
       `select id, kind, status, progress, step_label, error_pt, ref_id, result, created_at
          from jobs where project_id = $1 and kind in ('upload_process', 'zip') order by created_at desc limit 100`,

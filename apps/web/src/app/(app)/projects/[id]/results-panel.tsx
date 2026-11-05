@@ -31,10 +31,40 @@ export function ResultsPanel({ projectId, renders, jobs }: { projectId: string; 
   async function requestZip() {
     setBusy(true);
     setError(null);
-    const res = await fetch(`/api/projects/${projectId}/zip`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Não foi possível montar o ZIP.");
-    setBusy(false);
-    router.refresh();
+    try {
+      const res = await fetch(`/api/projects/${projectId}/zip`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const json = (await res.json().catch(() => ({}))) as { jobId?: string; status?: string; downloadUrl?: string | null; error?: string };
+      if (!res.ok || !json.jobId) {
+        setError(json.error ?? "Não foi possível montar o ZIP.");
+        return;
+      }
+      if (json.status === "succeeded" && json.downloadUrl) {
+        window.location.href = json.downloadUrl;
+        router.refresh();
+        return;
+      }
+      // Aguarda o worker terminar de compactar o ZIP e dispara o download automaticamente
+      for (let attempt = 0; attempt < 120; attempt++) {
+        await new Promise((r) => setTimeout(r, 400));
+        const poll = await fetch(`/api/projects/${projectId}/zip?jobId=${encodeURIComponent(json.jobId)}`);
+        const pollJson = (await poll.json().catch(() => ({}))) as { status?: string; downloadUrl?: string | null; error?: string };
+        if (pollJson.status === "succeeded" && pollJson.downloadUrl) {
+          window.location.href = pollJson.downloadUrl;
+          router.refresh();
+          return;
+        }
+        if (pollJson.status === "failed" || pollJson.status === "canceled") {
+          setError(pollJson.error ?? "Não foi possível montar o ZIP.");
+          router.refresh();
+          return;
+        }
+      }
+      router.refresh();
+    } catch {
+      setError("Não foi possível baixar o ZIP.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function retryFailed() {

@@ -32,7 +32,10 @@ export async function buildZip(deps: WorkerDeps, payload: ZipPayload, ctx: JobCo
     if (rows.length === 0) throw new UserFacingError("Nenhum vídeo pronto para baixar ainda.");
 
     const files: { code: string; file: string }[] = [];
+    const seenCodes = new Set<string>();
     for (const [i, row] of rows.entries()) {
+      if (seenCodes.has(row.code)) continue;
+      seenCodes.add(row.code);
       await progress(5 + Math.round((i / rows.length) * 70), `Baixando ${row.code}`);
       const file = path.join(workDir, `r${i}.mp4`);
       await deps.store.download(row.r2_key, file);

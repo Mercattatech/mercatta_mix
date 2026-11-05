@@ -144,8 +144,7 @@ describe("render com emendas", () => {
     expect(await hash(a)).toBe(await hash(b));
   }, 180_000);
 
-  it.skipIf(!process.env.FORCE_ASS_TEST)("com legenda queimada (requer FFmpeg com libass)", async () => {
-    expect(libass).toBe(true);
+  it("com legenda queimada (libass ou overlay PNG)", async () => {
     const out = path.join(dir, "subs.mp4");
     await renderVariation({ workDir: path.join(dir, "w5"), sources: { hook, body }, timeline, outFile: out });
     expect(await videoFrames(out)).toBe(timeline.totalFrames);

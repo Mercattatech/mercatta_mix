@@ -67,7 +67,44 @@ export function planPieceFromRow(r: SegmentRow): RenderPlanPiece {
 
 /** Hash do plano (usado ao gerar as combinações E pelo worker antes de renderizar). */
 export function computePlanHash(pieces: RenderPlanPiece[], style: Partial<CaptionStyle> | null): string {
-  return renderPlanHash(makeRenderPlan(pieces, { style: { ...DEFAULT_CAPTION_STYLE, ...style } }));
+  return renderPlanHash(makeRenderPlan(pieces, { style: style === null ? null : { ...DEFAULT_CAPTION_STYLE, ...style } }));
+}
+
+/**
+ * Garante que todo vídeo de origem já processado ('ready') que ainda não possua nenhum trecho salvo
+ * receba automaticamente o trecho padrão "Vídeo inteiro", para que todas as gravações enviadas entrem
+ * nas combinações sem exigir cliques manuais em cada aba.
+ */
+export async function ensureDefaultSegments(sql: Sql, organizationId: string, projectId: string): Promise<void> {
+  const missing = (
+    await sql.query<{ id: string; type: SegmentType; duration_ms: number | null; words: Word[] | null; sort_order: number }>(
+      `select sv.id, sv.type, sv.duration_ms, t.words, sv.sort_order
+         from source_videos sv
+         left join transcripts t on t.source_video_id = sv.id and t.organization_id = sv.organization_id
+        where sv.organization_id = $1 and sv.project_id = $2 and sv.status = 'ready'
+          and not exists (
+            select 1 from segments s
+             where s.organization_id = sv.organization_id
+               and s.project_id = sv.project_id
+               and s.source_video_id = sv.id
+          )
+        order by sv.sort_order, sv.created_at`,
+      [organizationId, projectId],
+    )
+  ).rows;
+
+  for (const sv of missing) {
+    const words = sv.words ?? [];
+    if (words.length === 0) continue;
+    const startMs = Math.round(words[0]!.start_ms);
+    const endMs = Math.round(words[words.length - 1]!.end_ms);
+    if (endMs <= startMs) continue;
+    await sql.query(
+      `insert into segments (organization_id, project_id, source_video_id, type, start_word_idx, end_word_idx, start_ms, end_ms, label, sort_order)
+       values ($1, $2, $3, $4, 0, $5, $6, $7, 'Vídeo inteiro', $8)`,
+      [organizationId, projectId, sv.id, sv.type, words.length - 1, startMs, endMs, sv.sort_order],
+    );
+  }
 }
 
 const SEGMENTS_SQL = `
@@ -128,6 +165,7 @@ export function estimateSegmentMs(words: Word[], startIdx: number, endIdx: numbe
 
 /** Quantos vídeos sairiam, sem gravar nada (a tela mostra isto ANTES de renderizar). */
 export async function previewCombinations(sql: Sql, opts: GenerateOptions): Promise<{ fullCount: number; combos: Combination[]; violations: DurationViolation[] }> {
+  await ensureDefaultSegments(sql, opts.organizationId, opts.projectId);
   const rows = (await sql.query<SegmentRow>(SEGMENTS_SQL, [opts.organizationId, opts.projectId])).rows;
   const refs = toRefs(rows);
   const all = generateCombinations(refs, { extraPosition: opts.extraPosition, extraMode: opts.extraMode });
@@ -147,6 +185,7 @@ function toRefs(rows: SegmentRow[]): SegmentRef[] {
 /** Gera e grava as combinações do projeto (produto cartesiano ou amostra), com o hash do plano de cada uma. */
 export async function generateProjectCombinations(db: Db, opts: GenerateOptions): Promise<GenerateResult> {
   return db.transaction(async (tx) => {
+    await ensureDefaultSegments(tx, opts.organizationId, opts.projectId);
     const rows = (await tx.query<SegmentRow>(SEGMENTS_SQL, [opts.organizationId, opts.projectId])).rows;
     const refs = toRefs(rows);
     const all = generateCombinations(refs, { extraPosition: opts.extraPosition, extraMode: opts.extraMode });

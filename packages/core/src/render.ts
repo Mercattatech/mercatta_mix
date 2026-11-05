@@ -8,6 +8,8 @@ export interface RenderArgsInput {
   assFileName?: string;
   /** Nome (sem diretório) da pasta de fontes dentro do diretório de trabalho. */
   fontsDirName?: string;
+  /** Nome (sem diretório) do .ffconcat de PNGs de legenda (fallback quando FFmpeg não tem libass). */
+  overlayConcatFile?: string;
   outPath: string;
   /** Fade de áudio em cada ponta de trecho. Padrão 50 ms (faixa pedida: 40–60 ms). */
   fadeMs?: number;
@@ -43,6 +45,7 @@ export function buildRenderArgs(input: RenderArgsInput): string[] {
   if (timeline.pieces.length === 0) throw new RenderPlanError("Linha do tempo vazia");
   if (input.assFileName && !SAFE_NAME.test(input.assFileName)) throw new RenderPlanError(`Nome de legenda inválido: ${input.assFileName}`);
   if (input.fontsDirName && !SAFE_NAME.test(input.fontsDirName)) throw new RenderPlanError(`Nome de pasta de fontes inválido: ${input.fontsDirName}`);
+  if (input.overlayConcatFile && !SAFE_NAME.test(input.overlayConcatFile)) throw new RenderPlanError(`Nome de legenda concat inválido: ${input.overlayConcatFile}`);
 
   // Um -i por vídeo de origem, na ordem em que aparece.
   const sourceIds: string[] = [];
@@ -52,6 +55,10 @@ export function buildRenderArgs(input: RenderArgsInput): string[] {
     const path = input.inputs[id];
     if (!path) throw new RenderPlanError(`Arquivo de origem ausente para o vídeo ${id}`);
     args.push("-i", path);
+  }
+  const overlaySubIdx = !input.assFileName && input.overlayConcatFile ? sourceIds.length : -1;
+  if (overlaySubIdx >= 0) {
+    args.push("-f", "concat", "-safe", "0", "-i", input.overlayConcatFile!);
   }
 
   const chains: string[] = [];
@@ -75,6 +82,11 @@ export function buildRenderArgs(input: RenderArgsInput): string[] {
   if (input.assFileName) {
     const fonts = input.fontsDirName ? `:fontsdir=${input.fontsDirName}` : "";
     chains.push(`[vcat]scale=${width}:${height},ass=${input.assFileName}${fonts}[vout]`);
+    videoLabel = "vout";
+  } else if (overlaySubIdx >= 0) {
+    chains.push(`[vcat]scale=${width}:${height}[vscaled]`);
+    chains.push(`[${overlaySubIdx}:v]fps=${timeline.fps},format=rgba[vsub]`);
+    chains.push(`[vscaled][vsub]overlay=0:0:eof_action=pass[vout]`);
     videoLabel = "vout";
   }
 

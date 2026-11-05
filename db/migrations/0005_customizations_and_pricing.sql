@@ -17,3 +17,4 @@ values (
   }'::jsonb
 )
 on conflict (key) do nothing;
+

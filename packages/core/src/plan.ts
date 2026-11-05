@@ -5,7 +5,7 @@ import { DEFAULT_PAD_AFTER_MS, DEFAULT_PAD_BEFORE_MS, DEFAULT_SNAP_WINDOW_MS } f
 import type { SegmentType } from "./types";
 
 /** Muda quando o jeito de renderizar muda (força novos renders em vez de reaproveitar os antigos). */
-export const RENDERER_VERSION = 1;
+export const RENDERER_VERSION = 2;
 
 export interface RenderPlanPiece {
   segmentId: string;
