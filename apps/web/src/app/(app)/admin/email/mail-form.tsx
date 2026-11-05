@@ -24,7 +24,7 @@ interface Initial {
 
 type Msg = { tone: "success" | "danger"; text: string } | null;
 
-const selectClass = "h-11 w-full rounded-xl border border-white/10 bg-surface px-3 text-sm text-fg focus:border-primary/70 focus:outline-none";
+const selectClass = "h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg focus:border-primary/70 focus:outline-none";
 
 function Field({ label, htmlFor, children, hint }: { label: string; htmlFor: string; children: React.ReactNode; hint?: string }) {
   return (

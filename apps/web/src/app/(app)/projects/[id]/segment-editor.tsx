@@ -52,7 +52,7 @@ export function SegmentEditor({
                   aria-selected={on}
                   id={`tab-${v.id}`}
                   onClick={() => setActiveId(v.id)}
-                  className={cn("rounded-full border px-3.5 py-1.5 text-sm transition", on ? "border-primary/70 bg-primary/20 text-fg" : "border-white/10 text-muted hover:border-white/25 hover:text-fg")}
+                  className={cn("rounded-full border px-3.5 py-1.5 text-sm transition", on ? "border-primary/70 bg-primary/20 text-fg" : "border-border text-muted hover:border-border-strong hover:text-fg hover:bg-surface-2")}
                 >
                   {TYPE_LABELS[v.type]} {i + 1}
                   {count > 0 && <span className="ml-1.5 text-xs text-accent">· {count} trecho(s)</span>}
@@ -165,7 +165,7 @@ function VideoEditor({ projectId, video, words, segments, canWrite }: { projectI
             maxLength={80}
             placeholder="Nome (opcional)"
             aria-label="Nome do trecho"
-            className="h-9 min-w-40 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm focus:border-primary/70 focus:outline-none"
+            className="h-9 min-w-40 flex-1 rounded-lg border border-border bg-surface px-3 text-sm focus:border-primary/70 focus:outline-none"
           />
           <Button type="button" size="sm" id="save-segment" disabled={busy || anchor !== null} aria-busy={busy} onClick={() => void save(range[0], range[1], label)}>
             {busy && <Spinner className="size-3" />} Salvar trecho
@@ -189,7 +189,7 @@ function VideoEditor({ projectId, video, words, segments, canWrite }: { projectI
       {segments.length > 0 && (
         <ul className="grid gap-2 sm:grid-cols-2" aria-label="Trechos salvos">
           {segments.map((s) => (
-            <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.04] px-3 py-2 text-sm">
+            <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">
               <span className="min-w-0">
                 <span className="block truncate">{s.label || words.slice(s.start_word_idx, s.start_word_idx + 6).map((w) => w.w).join(" ") + "…"}</span>
                 <span className="text-xs text-muted">{formatDuration(s.end_ms - s.start_ms)}</span>

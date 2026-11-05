@@ -14,8 +14,8 @@ export function Button({ variant = "primary", size = "md", className, ...props }
         size === "md" && "h-10 px-4 text-sm",
         size === "lg" && "h-12 px-6 text-base",
         variant === "primary" && "btn-glow text-white",
-        variant === "outline" && "border border-white/15 bg-white/[0.03] text-fg transition hover:bg-white/[0.08]",
-        variant === "ghost" && "text-muted transition hover:bg-white/[0.06] hover:text-fg",
+        variant === "outline" && "border border-border bg-surface text-fg transition hover:bg-surface-2",
+        variant === "ghost" && "text-muted transition hover:bg-surface-2 hover:text-fg",
         variant === "danger" && "border border-danger/40 bg-danger/10 text-danger transition hover:bg-danger/20",
         className,
       )}
@@ -32,7 +32,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
     <input
       {...props}
       className={cn(
-        "h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3.5 text-sm text-fg placeholder:text-muted/70 transition focus:border-primary/70 focus:bg-white/[0.06] focus:outline-none",
+        "h-11 w-full rounded-xl border border-border bg-surface text-fg placeholder:text-muted/70 transition focus:border-primary/70 focus:outline-none",
         className,
       )}
     />
@@ -40,7 +40,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
 }
 
 const TONES = {
-  neutral: "bg-white/[0.07] text-muted",
+  neutral: "bg-surface-2 text-muted border border-border",
   primary: "bg-primary/20 text-primary-2",
   success: "bg-success/15 text-success",
   warn: "bg-warn/15 text-warn",
@@ -54,14 +54,14 @@ export function Badge({ tone = "neutral", className, ...props }: HTMLAttributes<
 export function ProgressBar({ value, className }: { value: number; className?: string }) {
   const v = Math.max(0, Math.min(100, value));
   return (
-    <div role="progressbar" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100} className={cn("h-1.5 w-full overflow-hidden rounded-full bg-white/10", className)}>
+    <div role="progressbar" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100} className={cn("h-1.5 w-full overflow-hidden rounded-full bg-surface-2 border border-border", className)}>
       <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-[width] duration-500" style={{ width: `${v}%` }} />
     </div>
   );
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <span aria-hidden className={cn("inline-block size-4 animate-spin rounded-full border-2 border-white/25 border-t-white", className)} />;
+  return <span aria-hidden className={cn("inline-block size-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary", className)} />;
 }
 
 export function Alert({ tone = "danger", className, ...props }: HTMLAttributes<HTMLDivElement> & { tone?: "danger" | "warn" | "success" | "primary" }) {

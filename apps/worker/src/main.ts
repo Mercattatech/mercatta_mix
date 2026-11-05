@@ -8,6 +8,7 @@ import { processSource } from "./handlers/process-source";
 import { buildZip } from "./handlers/zip";
 import { LocalObjectStore, R2ObjectStore, type ObjectStore } from "./store";
 import { FasterWhisperTranscriber, OpenAiWhisperTranscriber, type Transcriber } from "./transcriber";
+import { hasAssFilter } from "./media";
 
 async function main() {
   const cfg = loadConfig();
@@ -19,11 +20,17 @@ async function main() {
       : new LocalObjectStore(path.resolve(cfg.LOCAL_STORAGE_DIR));
   const transcriber: Transcriber = cfg.TRANSCRIBER === "openai" ? new OpenAiWhisperTranscriber(cfg.OPENAI_API_KEY!) : new FasterWhisperTranscriber();
 
+  const canBurnCaptions = await hasAssFilter();
+  if (!canBurnCaptions) {
+    console.log(JSON.stringify({ msg: "worker.info", note: "FFmpeg sem filtro ass (libass); renderizando sem queima de legenda neste ambiente." }));
+  }
+
   const deps: WorkerDeps = {
     db: fromPgPool(pool),
     store,
     transcriber,
     tmpRoot: path.resolve(cfg.TMP_DIR),
+    burnCaptions: canBurnCaptions,
     ...(cfg.FONTS_DIR ? { fontsDir: cfg.FONTS_DIR } : {}),
   };
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SignOutButton } from "@/components/sign-out-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui";
 import { getAppContext } from "@/lib/context";
 
@@ -7,7 +8,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ctx = await getAppContext();
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-bg/70 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Link href="/projects" className="font-display text-xl font-semibold tracking-tight">
             <span className="gradient-text">Mercatta Mix</span>
@@ -29,10 +30,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 ✦ {ctx.credits} {ctx.credits === 1 ? "crédito" : "créditos"}
               </Badge>
             )}
+            <ThemeToggle />
             <SignOutButton />
           </div>
         </div>
-        <nav aria-label="Principal (celular)" className="flex gap-1 overflow-x-auto border-t border-white/[0.04] px-4 py-1.5 sm:hidden">
+        <nav aria-label="Principal (celular)" className="flex gap-1 overflow-x-auto border-t border-border px-4 py-1.5 sm:hidden">
           <NavLink href="/projects">Projetos</NavLink>
           <NavLink href="/team">Equipe</NavLink>
           {ctx.isAdmin && <NavLink href="/admin">Admin</NavLink>}
@@ -45,7 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link href={href} className="rounded-lg px-3 py-1.5 text-sm text-muted transition hover:bg-white/[0.06] hover:text-fg">
+    <Link href={href} className="rounded-lg px-3 py-1.5 text-sm text-muted transition hover:bg-surface-2 hover:text-fg">
       {children}
     </Link>
   );

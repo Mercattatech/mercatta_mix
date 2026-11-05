@@ -23,7 +23,7 @@ function slugify(name: string): string {
 /** Admin da plataforma: cria uma empresa cliente (acesso por convite) e, se quiser, já dá créditos. */
 export function POST(req: Request) {
   return handle(async () => {
-    await requireApiAdmin();
+    const admin = await requireApiAdmin();
     const input = body.parse(await req.json());
     const db = getDb();
     return db.transaction(async (tx) => {
@@ -37,6 +37,10 @@ export function POST(req: Request) {
       if (input.initialCredits > 0) {
         await tx.query("insert into credits_ledger (organization_id, delta, reason, note) values ($1, $2, 'grant', 'Créditos iniciais')", [org.id, input.initialCredits]);
       }
+      await tx.query(
+        "insert into memberships (user_id, organization_id, role) values ($1, $2, 'owner') on conflict do nothing",
+        [admin.id, org.id],
+      );
       return { id: org.id, slug };
     });
   });

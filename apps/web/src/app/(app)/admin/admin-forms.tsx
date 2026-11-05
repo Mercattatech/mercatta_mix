@@ -65,7 +65,7 @@ function NewOrg() {
 
 function OrgSelect({ orgs, value, onChange, id }: { orgs: Org[]; value: string; onChange: (v: string) => void; id: string }) {
   return (
-    <select id={id} required value={value} onChange={(e) => onChange(e.target.value)} aria-label="Empresa" className="h-11 w-full rounded-xl border border-white/10 bg-surface px-3 text-sm text-fg focus:border-primary/70 focus:outline-none">
+    <select id={id} required value={value} onChange={(e) => onChange(e.target.value)} aria-label="Empresa" className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg focus:border-primary/70 focus:outline-none">
       <option value="">Escolha a empresa…</option>
       {orgs.map((o) => (
         <option key={o.id} value={o.id}>
@@ -93,7 +93,7 @@ function Invite({ orgs }: { orgs: Org[] }) {
         <h2 className="font-display text-lg font-medium">Convidar pessoa</h2>
         <OrgSelect id="invite-org" orgs={orgs} value={organizationId} onChange={setOrg} />
         <Input id="invite-email" type="email" required placeholder="email@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value)} aria-label="Papel" className="h-11 w-full rounded-xl border border-white/10 bg-surface px-3 text-sm text-fg focus:border-primary/70 focus:outline-none">
+        <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value)} aria-label="Papel" className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg focus:border-primary/70 focus:outline-none">
           <option value="owner">Dono</option>
           <option value="editor">Editor</option>
           <option value="aprovador">Aprovador</option>

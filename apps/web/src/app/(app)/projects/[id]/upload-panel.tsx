@@ -76,7 +76,7 @@ export function UploadPanel({ projectId, videos, jobs, canWrite }: { projectId: 
               id="language"
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="h-9 rounded-lg border border-white/10 bg-surface px-2 text-sm text-fg focus:border-primary/70 focus:outline-none"
+              className="h-9 rounded-lg border border-border bg-surface px-2 text-sm text-fg focus:border-primary/70 focus:outline-none"
             >
               {LANGUAGES.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -150,7 +150,7 @@ function TypeCard({
             setOver(false);
             onFiles(Array.from(e.dataTransfer.files));
           }}
-          className={cn("grid place-items-center rounded-xl border border-dashed px-3 py-5 text-center transition", over ? "border-primary bg-primary/10" : "border-white/15 hover:border-white/30")}
+          className={cn("grid place-items-center rounded-xl border border-dashed px-3 py-5 text-center transition", over ? "border-primary bg-primary/10" : "border-border hover:border-primary/50")}
         >
           <input
             ref={input}
@@ -173,7 +173,7 @@ function TypeCard({
 
       <ul className="space-y-2">
         {inFlight.map((u) => (
-          <li key={u.key} className="rounded-lg bg-white/[0.04] p-2.5 text-sm">
+          <li key={u.key} className="rounded-lg border border-border bg-surface-2 p-2.5 text-sm">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate" title={u.name}>
                 {u.name}
@@ -224,7 +224,7 @@ function VideoItem({ video, job, canWrite }: { video: VideoRow; job: JobRow | un
 
   const working = video.status === "uploaded" || video.status === "processing";
   return (
-    <li className="rounded-lg bg-white/[0.04] p-2.5 text-sm" data-video-id={video.id}>
+    <li className="rounded-lg border border-border bg-surface-2 p-2.5 text-sm" data-video-id={video.id}>
       <div className="flex items-center justify-between gap-2">
         <span className="truncate" title={video.original_filename ?? ""}>
           {video.original_filename ?? "vídeo"}

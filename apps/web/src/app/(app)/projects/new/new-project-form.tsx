@@ -55,7 +55,7 @@ export function NewProjectForm({ organizationId }: { organizationId: string }) {
                 type="button"
                 aria-pressed={on}
                 onClick={() => setNetworks((cur) => (on ? cur.filter((x) => x !== n.id) : [...cur, n.id]))}
-                className={cn("rounded-full border px-4 py-2 text-sm transition", on ? "border-primary/70 bg-primary/20 text-fg" : "border-white/10 text-muted hover:border-white/25 hover:text-fg")}
+                className={cn("rounded-full border px-4 py-2 text-sm transition", on ? "border-primary/70 bg-primary/20 text-fg" : "border-border text-muted hover:border-border-strong hover:text-fg hover:bg-surface-2")}
               >
                 {n.label}
               </button>

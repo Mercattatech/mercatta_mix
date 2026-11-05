@@ -37,6 +37,26 @@ export function ResultsPanel({ projectId, renders, jobs }: { projectId: string; 
     router.refresh();
   }
 
+  async function retryFailed() {
+    setBusy(true);
+    setError(null);
+    try {
+      const failedComboIds = failed.map((r) => r.combination_id);
+      const res = await fetch(`/api/projects/${projectId}/renders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ combinationIds: failedComboIds }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Não foi possível tentar novamente.");
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section aria-labelledby="results-title" className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -68,7 +88,28 @@ export function ResultsPanel({ projectId, renders, jobs }: { projectId: string; 
       )}
       {zip?.status === "failed" && <Alert>{zip.error_pt ?? "Não foi possível montar o ZIP."}</Alert>}
       {error && <Alert>{error}</Alert>}
-      {failed.length > 0 && <Alert tone="warn">{failed.length} vídeo(s) falharam. Os créditos deles voltam para o seu saldo automaticamente.</Alert>}
+
+      {failed.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warn/30 bg-warn/10 p-4">
+          <div>
+            <p className="text-sm font-medium text-warn">
+              {failed.length} vídeo(s) falharam na tentativa anterior.
+            </p>
+            <p className="text-xs text-muted">
+              O problema com o renderizador foi corrigido. Os créditos retornaram ao saldo e você pode reprocessar agora.
+            </p>
+          </div>
+          <Button
+            id="retry-failed"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => void retryFailed()}
+          >
+            {busy ? <Spinner className="size-3" /> : null} Tentar novamente ({failed.length})
+          </Button>
+        </div>
+      )}
 
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" id="renders-grid">
         {renders.map((r) => {

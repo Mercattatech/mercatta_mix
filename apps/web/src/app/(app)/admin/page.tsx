@@ -41,7 +41,7 @@ export default async function AdminPage() {
           <p className="font-medium">E-mail (SMTP)</p>
           <p className="text-xs text-muted">Escolha o servidor que envia os links de acesso e convites (Gmail, Hostinger, Resend, qualquer SMTP).</p>
         </div>
-        <Link id="open-mail-settings" href="/admin/email" className="rounded-xl border border-white/15 bg-white/[0.03] px-4 py-2 text-sm font-medium transition hover:bg-white/[0.08]">
+        <Link id="open-mail-settings" href="/admin/email" className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium transition hover:bg-surface-2">
           Configurar e-mail
         </Link>
       </Card>

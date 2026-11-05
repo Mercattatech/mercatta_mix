@@ -49,7 +49,7 @@ export default async function ProjectsPage() {
             return (
               <li key={p.id}>
                 <Link href={`/projects/${p.id}`} className="group block h-full">
-                  <Card className="h-full transition duration-200 group-hover:-translate-y-0.5 group-hover:border-white/20 group-hover:bg-white/[0.06]">
+                  <Card className="h-full transition duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/50 group-hover:bg-surface-2">
                     <Badge tone={s.tone}>{s.label}</Badge>
                     <h2 className="font-display mt-4 text-xl font-medium">{p.name}</h2>
                     <p className="mt-1 text-sm text-muted">Criado em {new Date(p.created_at).toLocaleDateString("pt-BR")}</p>
