@@ -15,6 +15,7 @@ export interface RenderContext {
   /** Trechos na ordem em que entram no vídeo final. */
   segments: RenderSegment[];
   style: Partial<CaptionStyle>;
+  burnCaptions?: boolean;
   pieces: RenderPlanPiece[];
   /** Hash recalculado agora a partir do que está no banco. Se diferir de render.planHash, o plano mudou. */
   currentPlanHash: string;
@@ -66,6 +67,7 @@ export async function loadRenderContext(sql: Sql, organizationId: string, render
     render: { id: r.id, status: r.status, planHash: r.plan_hash, combinationId: r.combination_id, projectId: r.project_id, code: r.code },
     segments,
     style: style ?? {},
+    burnCaptions: style !== null,
     pieces,
     currentPlanHash: computePlanHash(pieces, style),
   };

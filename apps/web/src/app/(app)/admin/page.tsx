@@ -36,15 +36,27 @@ export default async function AdminPage() {
         <p className="mt-1 text-muted">Crie empresas clientes, convide pessoas (acesso só por convite) e dê créditos.</p>
       </div>
 
-      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div>
-          <p className="font-medium">E-mail (SMTP)</p>
-          <p className="text-xs text-muted">Escolha o servidor que envia os links de acesso e convites (Gmail, Hostinger, Resend, qualquer SMTP).</p>
-        </div>
-        <Link id="open-mail-settings" href="/admin/email" className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium transition hover:bg-surface-2">
-          Configurar e-mail
-        </Link>
-      </Card>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <p className="font-medium">E-mail (SMTP)</p>
+            <p className="text-xs text-muted">Servidor que envia os links de acesso e convites.</p>
+          </div>
+          <Link id="open-mail-settings" href="/admin/email" className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium transition hover:bg-surface-2">
+            Configurar e-mail
+          </Link>
+        </Card>
+
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <p className="font-medium">Precificação e Pacotes</p>
+            <p className="text-xs text-muted">Preço em créditos de vídeos e descontos de pacotes.</p>
+          </div>
+          <Link id="open-pricing-settings" href="/admin/pricing" className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium transition hover:bg-surface-2">
+            Configurar preços
+          </Link>
+        </Card>
+      </div>
 
       <AdminForms orgs={rows.map((o) => ({ id: o.id, name: o.name }))} />
 

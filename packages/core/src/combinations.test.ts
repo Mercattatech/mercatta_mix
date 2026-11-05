@@ -83,9 +83,13 @@ describe("generateCombinations", () => {
     expect(() => generateCombinations(base, { styles: ["A", "a b", "A"] })).toThrow(CombinationError);
   });
 
-  it("erro claro quando falta um tipo obrigatório", () => {
-    expect(() => generateCombinations(base.filter((s) => s.type !== "cta"))).toThrow(/CTA/);
-    expect(() => generateCombinations([])).toThrow(/Gancho, Miolo, CTA/);
+  it("gera combinacoes mesmo se faltar miolo ou extra, mantendo gancho no inicio e CTA no fim", () => {
+    const withoutBody = base.filter((s) => s.type !== "body");
+    const combos = generateCombinations(withoutBody);
+    expect(combos).toHaveLength(6); // 3 hooks x 2 ctas
+    expect(combos[0]!.code).toBe("H1_C1");
+    expect(combos[0]!.parts.map((p) => p.type)).toEqual(["hook", "cta"]);
+    expect(() => generateCombinations([])).toThrow(CombinationError);
   });
 
   it("rejeita trecho repetido", () => {

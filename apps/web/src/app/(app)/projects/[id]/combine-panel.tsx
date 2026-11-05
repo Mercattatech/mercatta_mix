@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Badge, Button, Card, Spinner } from "@/components/ui";
 import { TYPE_LABELS, cn, formatDuration } from "@/lib/utils";
+import type { PricingConfig } from "@mercatta/server";
 import type { SegmentRow } from "./types";
 
 interface Preview {
@@ -22,6 +23,24 @@ const NETWORK_NAMES: Record<string, string> = {
   facebook: "Facebook Reels",
   linkedin: "LinkedIn",
 };
+
+const FONTS = [
+  { id: "DejaVu Sans", label: "DejaVu Sans (Padrão)" },
+  { id: "Montserrat", label: "Montserrat" },
+  { id: "Inter", label: "Inter" },
+  { id: "Roboto", label: "Roboto" },
+  { id: "Arial", label: "Arial" },
+  { id: "Impact", label: "Impact" },
+];
+
+const HIGHLIGHT_COLORS = [
+  { hex: "#FFD400", name: "Amarelo" },
+  { hex: "#34D399", name: "Verde" },
+  { hex: "#FF7A59", name: "Coral" },
+  { hex: "#8B5CF6", name: "Roxo" },
+  { hex: "#FFFFFF", name: "Branco" },
+  { hex: "#38BDF8", name: "Azul Claro" },
+];
 
 function computeScaleCounts(total: number) {
   if (total <= 1) {
@@ -47,23 +66,51 @@ function computeScaleCounts(total: number) {
   };
 }
 
-/** Mostra quantos vídeos saem das combinações e permite escolher entre Pequena, Média ou Total. */
-export function CombinePanel({ projectId, segments, credits, canWrite }: { projectId: string; segments: SegmentRow[]; credits: number | null; canWrite: boolean }) {
+export function CombinePanel({
+  projectId,
+  segments,
+  credits,
+  canWrite,
+  initialSettings = {},
+  initialInstructions = "",
+  pricing,
+}: {
+  projectId: string;
+  segments: SegmentRow[];
+  credits: number | null;
+  canWrite: boolean;
+  initialSettings?: Record<string, unknown>;
+  initialInstructions?: string;
+  pricing?: PricingConfig;
+}) {
   const router = useRouter();
   const counts = { hook: 0, body: 0, cta: 0, extra: 0 };
   for (const s of segments) counts[s.type]++;
   const signature = `${counts.hook}-${counts.body}-${counts.cta}-${counts.extra}-${segments.map((s) => s.id).join(",")}`;
-  const complete = counts.hook > 0 && counts.body > 0 && counts.cta > 0;
+  const complete = counts.hook > 0 || counts.body > 0 || counts.cta > 0;
 
   const [extraPosition, setExtraPosition] = useState<"afterHook" | "afterBody" | "afterCta">("afterBody");
   const [extraMode, setExtraMode] = useState<"include" | "optional">("include");
   const [scaleMode, setScaleMode] = useState<ScaleMode>("total");
   const [customN, setCustomN] = useState<number>(1);
 
-  // a prévia guarda a "assinatura" dos trechos para a qual foi calculada
+  // Opções de Legenda, B-Rolls e Instruções de Edição
+  const initCap = (initialSettings.caption_style as Record<string, unknown>) ?? {};
+  const [burnCaptions, setBurnCaptions] = useState<boolean>(initialSettings.burn_captions !== false);
+  const [fontName, setFontName] = useState<string>((initCap.fontName as string) ?? "DejaVu Sans");
+  const [fontSize, setFontSize] = useState<number>((initCap.fontSize as number) ?? 78);
+  const [highlightColor, setHighlightColor] = useState<string>((initCap.highlightColor as string) ?? "#FFD400");
+  const [captionMode, setCaptionMode] = useState<"karaoke" | "static">((initCap.mode as "karaoke" | "static") ?? "karaoke");
+  const [captionPosition, setCaptionPosition] = useState<"top" | "middle" | "bottom">((initCap.position as "top" | "middle" | "bottom") ?? "bottom");
+
+  const [useBrolls, setUseBrolls] = useState<boolean>(Boolean(initialSettings.use_b_rolls));
+  const [editingInstructions, setEditingInstructions] = useState<string>(initialInstructions);
+
   const [loaded, setLoaded] = useState<{ signature: string; preview: Preview } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savedSettingsMsg, setSavedSettingsMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const preview = complete && loaded?.signature === signature ? loaded.preview : null;
   const loading = complete && preview === null && error === null;
 
@@ -98,14 +145,69 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
     return scaleCounts.total;
   }, [scaleMode, scaleCounts, preview, customN]);
 
-  const creditsNeeded = preview ? effectiveCount * preview.creditsPerVideo : 0;
+  // Cálculo de desconto por pacote conforme precificação do admin
+  const discountPercent = useMemo(() => {
+    if (!pricing) return 0;
+    if (scaleMode === "small") return pricing.packageSmallDiscount;
+    if (scaleMode === "medium") return pricing.packageMediumDiscount;
+    if (scaleMode === "total") return pricing.packageTotalDiscount;
+    return 0;
+  }, [scaleMode, pricing]);
+
+  const perVideoCredits = pricing?.perVideoCredits ?? preview?.creditsPerVideo ?? 1;
+  const rawCost = effectiveCount * perVideoCredits;
+  const creditsNeeded = Math.max(1, Math.round(rawCost * (1 - discountPercent / 100)));
   const notEnough = preview !== null && credits !== null && creditsNeeded > credits;
+
+  async function saveProjectSettings() {
+    try {
+      await fetch(`/api/projects/${projectId}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          editingInstructions,
+          useBrolls,
+          burnCaptions,
+          captionStyle: {
+            fontName,
+            fontSize,
+            highlightColor,
+            mode: captionMode,
+            position: captionPosition,
+          },
+        }),
+      });
+      setSavedSettingsMsg("Preferências de edição salvas.");
+      setTimeout(() => setSavedSettingsMsg(null), 3000);
+    } catch {
+      // silencioso
+    }
+  }
 
   async function generate() {
     if (!preview) return;
     setBusy(true);
     setError(null);
     try {
+      // 1. Salva configurações de legenda, B-Roll e instruções antes de disparar
+      await fetch(`/api/projects/${projectId}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          editingInstructions,
+          useBrolls,
+          burnCaptions,
+          captionStyle: {
+            fontName,
+            fontSize,
+            highlightColor,
+            mode: captionMode,
+            position: captionPosition,
+          },
+        }),
+      });
+
+      // 2. Gera a amostra do pacote selecionado
       const isSample = effectiveCount < preview.count;
       const comb = await fetch(`/api/projects/${projectId}/combinations`, {
         method: "POST",
@@ -118,6 +220,7 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
       const combJson = (await comb.json().catch(() => ({}))) as { error?: string };
       if (!comb.ok) throw new Error(combJson.error ?? "Não foi possível gerar as combinações.");
 
+      // 3. Enfileira a renderização em lote
       const rend = await fetch(`/api/projects/${projectId}/renders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,17 +251,19 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
           3. Combine e gere
         </h2>
         <p className="mt-1 text-sm text-muted">
-          Cada gancho se junta com cada miolo e cada chamada. Escolha a escala de geração e confira os créditos antes de gerar.
+          A sequência é sempre: <strong>Gancho → Conteúdo → Extra → Chamada (CTA no fim)</strong>. Configure legendas, B-Rolls e gere por pacote.
         </p>
       </div>
+
       <Card className="space-y-6">
+        {/* Contagem dos tipos */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 font-display text-xl">
           {(["hook", "body", "cta"] as const).map((t, i) => (
             <span key={t} className="flex items-center gap-3">
               {i > 0 && <span className="text-muted">×</span>}
               <span>
                 <strong className="gradient-text text-3xl">{counts[t]}</strong>{" "}
-                <span className="text-base text-muted">{TYPE_LABELS[t].toLowerCase()}(s)</span>
+                <span className="text-base text-muted">{t === "body" ? "conteúdo(s)" : `${TYPE_LABELS[t].toLowerCase()}(s)`}</span>
               </span>
             </span>
           ))}
@@ -175,48 +280,167 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
           {loading && <Spinner />}
         </div>
 
-        {!complete && <Alert tone="primary">Salve pelo menos 1 trecho de gancho, 1 de miolo e 1 de chamada para ver as combinações.</Alert>}
+        {!complete && <Alert tone="primary">Salve pelo menos 1 trecho (gancho, conteúdo ou chamada) para gerar vídeos.</Alert>}
 
-        {complete && counts.extra > 0 && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm text-muted">
-              Onde entra o extra
-              <select
-                value={extraPosition}
-                onChange={(e) => setExtraPosition(e.target.value as typeof extraPosition)}
-                className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-fg"
-              >
-                <option value="afterHook">Depois do gancho</option>
-                <option value="afterBody">Depois do miolo</option>
-                <option value="afterCta">Depois da chamada</option>
-              </select>
-            </label>
-            <label className="space-y-1 text-sm text-muted">
-              Como usar
-              <select
-                value={extraMode}
-                onChange={(e) => setExtraMode(e.target.value as typeof extraMode)}
-                className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-fg"
-              >
-                <option value="include">Em todos os vídeos</option>
-                <option value="optional">Opcional (com e sem extra)</option>
-              </select>
+        {/* Bloco de Legendas e Estilo */}
+        <div className="rounded-xl border border-border bg-surface-2 p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-display text-base font-semibold text-fg">Legendas e Estilo Visual</h3>
+              <p className="text-xs text-muted">Defina se deseja queimar legendas dinâmicas nos vídeos e personalize tipografia e cores.</p>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={burnCaptions}
+                onChange={(e) => {
+                  setBurnCaptions(e.target.checked);
+                  void saveProjectSettings();
+                }}
+                className="size-4 rounded accent-primary cursor-pointer"
+              />
+              <span>Ativar legendas no vídeo</span>
             </label>
           </div>
-        )}
 
+          {burnCaptions && (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-2 border-t border-border">
+              {/* Fonte */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted">Fonte</label>
+                <select
+                  value={fontName}
+                  onChange={(e) => {
+                    setFontName(e.target.value);
+                    void saveProjectSettings();
+                  }}
+                  className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                >
+                  {FONTS.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Modo de Legenda */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted">Modo de Animação</label>
+                <select
+                  value={captionMode}
+                  onChange={(e) => {
+                    setCaptionMode(e.target.value as "karaoke" | "static");
+                    void saveProjectSettings();
+                  }}
+                  className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                >
+                  <option value="karaoke">Karaokê (palavra a palavra)</option>
+                  <option value="static">Estático (linha inteira)</option>
+                </select>
+              </div>
+
+              {/* Cor de Destaque */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted">Cor de Destaque</label>
+                <select
+                  value={highlightColor}
+                  onChange={(e) => {
+                    setHighlightColor(e.target.value);
+                    void saveProjectSettings();
+                  }}
+                  className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                >
+                  {HIGHLIGHT_COLORS.map((c) => (
+                    <option key={c.hex} value={c.hex}>
+                      {c.name} ({c.hex})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Posição */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted">Posição na Tela</label>
+                <select
+                  value={captionPosition}
+                  onChange={(e) => {
+                    setCaptionPosition(e.target.value as "top" | "middle" | "bottom");
+                    void saveProjectSettings();
+                  }}
+                  className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                >
+                  <option value="bottom">Inferior (Padrão Reels/Shorts)</option>
+                  <option value="middle">Centro</option>
+                  <option value="top">Superior</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bloco de B-Rolls e Instruções de Edição */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Opção B-Rolls */}
+          <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="b-rolls" className="text-sm font-medium text-fg">
+                B-Rolls (Imagens / Cenas de apoio)
+              </label>
+              <input
+                id="b-rolls"
+                type="checkbox"
+                checked={useBrolls}
+                onChange={(e) => {
+                  setUseBrolls(e.target.checked);
+                  void saveProjectSettings();
+                }}
+                className="size-4 rounded accent-primary cursor-pointer"
+              />
+            </div>
+            <p className="text-xs text-muted">
+              {useBrolls
+                ? "Ativado: trechos do tipo Extra serão tratados como imagens de apoio (B-Rolls) na timeline."
+                : "Desativado: vídeo composto apenas pelos cortes diretos de gancho, conteúdo e CTA."}
+            </p>
+          </div>
+
+          {/* Instruções para a Edição */}
+          <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="instructions" className="text-sm font-medium text-fg">
+                Instruções para a Edição
+              </label>
+              {savedSettingsMsg && <span className="text-xs text-success font-medium">{savedSettingsMsg}</span>}
+            </div>
+            <textarea
+              id="instructions"
+              rows={2}
+              maxLength={1000}
+              placeholder="Ex: Cortes rápidos no gancho, manter ritmo dinâmico, zoom sutil no CTA..."
+              value={editingInstructions}
+              onChange={(e) => setEditingInstructions(e.target.value)}
+              onBlur={() => void saveProjectSettings()}
+              className="w-full rounded-lg border border-border bg-surface p-2.5 text-xs text-fg placeholder:text-muted/70 focus:border-primary/70 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Seleção de Pacotes */}
         {preview && (
-          <div className="space-y-4">
+          <div className="space-y-4 pt-2">
             <div>
-              <p className="text-sm font-medium text-fg">Escala de combinações</p>
-              <p className="text-xs text-muted">Selecione quantas combinações deseja renderizar neste lote:</p>
+              <h3 className="text-base font-semibold text-fg">Pacotes de Combinações</h3>
+              <p className="text-xs text-muted">
+                Escolha o pacote desejado para gerar os vídeos deste lote. Todos os vídeos do pacote serão gerados e ficarão disponíveis para download imediato em ZIP.
+              </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              {/* Opção Pequena */}
+              {/* Pacote Pequeno */}
               <button
                 type="button"
-                id="scale-small"
+                id="package-small"
                 onClick={() => setScaleMode("small")}
                 className={cn(
                   "flex flex-col items-start rounded-xl border p-4 text-left transition",
@@ -226,22 +450,22 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
                 )}
               >
                 <div className="flex w-full items-center justify-between">
-                  <span className="font-display font-semibold text-fg">Pequena</span>
+                  <span className="font-display font-semibold text-fg">Pacote Pequeno</span>
                   <Badge tone={scaleMode === "small" ? "primary" : "neutral"}>
                     {scaleCounts.small} {scaleCounts.small === 1 ? "vídeo" : "vídeos"}
                   </Badge>
                 </div>
-                <p className="mt-2 text-xs text-muted">Amostra rápida para teste de ganchos e CTAs</p>
+                <p className="mt-2 text-xs text-muted">Amostra rápida para validar ganchos e CTAs</p>
                 <div className="mt-3 font-display text-sm font-semibold text-primary">
-                  ✦ {scaleCounts.small * preview.creditsPerVideo}{" "}
-                  {scaleCounts.small * preview.creditsPerVideo === 1 ? "crédito" : "créditos"}
+                  ✦ {Math.max(1, Math.round(scaleCounts.small * perVideoCredits * (1 - (pricing?.packageSmallDiscount ?? 0) / 100)))}{" "}
+                  créditos {pricing?.packageSmallDiscount ? `(${pricing.packageSmallDiscount}% off)` : ""}
                 </div>
               </button>
 
-              {/* Opção Média */}
+              {/* Pacote Médio */}
               <button
                 type="button"
-                id="scale-medium"
+                id="package-medium"
                 onClick={() => setScaleMode("medium")}
                 className={cn(
                   "flex flex-col items-start rounded-xl border p-4 text-left transition",
@@ -251,22 +475,22 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
                 )}
               >
                 <div className="flex w-full items-center justify-between">
-                  <span className="font-display font-semibold text-fg">Média</span>
+                  <span className="font-display font-semibold text-fg">Pacote Médio</span>
                   <Badge tone={scaleMode === "medium" ? "primary" : "neutral"}>
                     {scaleCounts.medium} {scaleCounts.medium === 1 ? "vídeo" : "vídeos"}
                   </Badge>
                 </div>
-                <p className="mt-2 text-xs text-muted">Variedade equilibrada cobrindo os trechos</p>
+                <p className="mt-2 text-xs text-muted">Variedade equilibrada cobrindo as mensagens</p>
                 <div className="mt-3 font-display text-sm font-semibold text-primary">
-                  ✦ {scaleCounts.medium * preview.creditsPerVideo}{" "}
-                  {scaleCounts.medium * preview.creditsPerVideo === 1 ? "crédito" : "créditos"}
+                  ✦ {Math.max(1, Math.round(scaleCounts.medium * perVideoCredits * (1 - (pricing?.packageMediumDiscount ?? 10) / 100)))}{" "}
+                  créditos {pricing?.packageMediumDiscount ? `(${pricing.packageMediumDiscount}% off)` : ""}
                 </div>
               </button>
 
-              {/* Opção Total */}
+              {/* Pacote Total */}
               <button
                 type="button"
-                id="scale-total"
+                id="package-total"
                 onClick={() => setScaleMode("total")}
                 className={cn(
                   "flex flex-col items-start rounded-xl border p-4 text-left transition",
@@ -276,15 +500,15 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
                 )}
               >
                 <div className="flex w-full items-center justify-between">
-                  <span className="font-display font-semibold text-fg">Total</span>
+                  <span className="font-display font-semibold text-fg">Pacote Total</span>
                   <Badge tone={scaleMode === "total" ? "primary" : "neutral"}>
                     {scaleCounts.total} {scaleCounts.total === 1 ? "vídeo" : "vídeos"}
                   </Badge>
                 </div>
                 <p className="mt-2 text-xs text-muted">100% de todas as combinações possíveis</p>
                 <div className="mt-3 font-display text-sm font-semibold text-primary">
-                  ✦ {scaleCounts.total * preview.creditsPerVideo}{" "}
-                  {scaleCounts.total * preview.creditsPerVideo === 1 ? "crédito" : "créditos"}
+                  ✦ {Math.max(1, Math.round(scaleCounts.total * perVideoCredits * (1 - (pricing?.packageTotalDiscount ?? 20) / 100)))}{" "}
+                  créditos {pricing?.packageTotalDiscount ? `(${pricing.packageTotalDiscount}% off)` : ""}
                 </div>
               </button>
             </div>
@@ -294,9 +518,9 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
                 <button
                   type="button"
                   onClick={() => setScaleMode(scaleMode === "custom" ? "total" : "custom")}
-                  className="underline hover:text-fg"
+                  className="underline hover:text-fg text-xs"
                 >
-                  {scaleMode === "custom" ? "Voltar para opções pré-definidas" : "Ou definir quantidade personalizada"}
+                  {scaleMode === "custom" ? "Voltar para os pacotes" : "Ou digitar quantidade personalizada de vídeos"}
                 </button>
                 {scaleMode === "custom" && (
                   <div className="flex items-center gap-2">
@@ -314,10 +538,19 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
               </div>
             )}
 
+            {/* Demonstração de contagem e créditos */}
             <dl className="grid gap-3 sm:grid-cols-4">
-              <Stat label="Total possível" value={String(preview.count)} hint="Todas as combinações" />
-              <Stat label="Vídeos a gerar" value={String(effectiveCount)} hint={`${Math.round((effectiveCount / preview.count) * 100)}% do total`} />
-              <Stat label="Custo em créditos" value={`${creditsNeeded} créditos`} hint={`${preview.creditsPerVideo} por vídeo`} />
+              <Stat label="Total possível" value={String(preview.count)} hint="Todas as variações" />
+              <Stat
+                label="Vídeos do Pacote"
+                value={String(effectiveCount)}
+                hint={`${Math.round((effectiveCount / preview.count) * 100)}% das combinações`}
+              />
+              <Stat
+                label="Custo do Pacote"
+                value={`${creditsNeeded} créditos`}
+                hint={discountPercent > 0 ? `${discountPercent}% de desconto` : `${perVideoCredits} por vídeo`}
+              />
               <Stat label="Seu saldo" value={credits === null ? "—" : `${credits} créditos`} tone={notEnough ? "danger" : undefined} />
             </dl>
           </div>
@@ -341,7 +574,10 @@ export function CombinePanel({ projectId, segments, credits, canWrite }: { proje
             aria-busy={busy}
             onClick={() => void generate()}
           >
-            {busy && <Spinner />} {preview ? `Gerar ${effectiveCount} ${effectiveCount === 1 ? "vídeo" : "vídeos"} agora (${creditsNeeded} créditos)` : "Gerar vídeos"}
+            {busy && <Spinner />}
+            {preview
+              ? `Gerar ${effectiveCount} ${effectiveCount === 1 ? "vídeo" : "vídeos"} do pacote agora (✦ ${creditsNeeded} créditos)`
+              : "Gerar pacote de vídeos"}
           </Button>
         )}
       </Card>

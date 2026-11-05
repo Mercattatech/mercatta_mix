@@ -75,7 +75,7 @@ export async function renderCombination(deps: WorkerDeps, payload: RenderPayload
         timeline,
         outFile: out,
         captions:
-          deps.burnCaptions === false
+          deps.burnCaptions === false || rc.burnCaptions === false
             ? false
             : { style: { ...DEFAULT_CAPTION_STYLE, ...rc.style }, ...(deps.fontsDir ? { fontsDir: deps.fontsDir } : {}) },
       });

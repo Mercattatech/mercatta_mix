@@ -34,6 +34,60 @@ export async function getRenderCreditCost(sql: Sql): Promise<number> {
   return r.rows[0]?.value?.per_render ?? 1;
 }
 
+export interface PricingConfig {
+  perVideoCredits: number;
+  packageSmallDiscount: number;
+  packageMediumDiscount: number;
+  packageTotalDiscount: number;
+}
+
+export async function getPricingConfig(sql: Sql): Promise<PricingConfig> {
+  const perVideo = await getRenderCreditCost(sql);
+  const r = await sql.query<{ value: { per_video_credits?: number; package_small?: { discount_percent?: number }; package_medium?: { discount_percent?: number }; package_total?: { discount_percent?: number } } }>(
+    "select value from platform_settings where key = 'pricing_packages'",
+  );
+  const val = r.rows[0]?.value;
+  return {
+    perVideoCredits: val?.per_video_credits ?? perVideo,
+    packageSmallDiscount: Number(val?.package_small?.discount_percent ?? 0),
+    packageMediumDiscount: Number(val?.package_medium?.discount_percent ?? 10),
+    packageTotalDiscount: Number(val?.package_total?.discount_percent ?? 20),
+  };
+}
+
+export async function updatePricingConfig(sql: Sql, input: Partial<PricingConfig>): Promise<PricingConfig> {
+  const current = await getPricingConfig(sql);
+  const updated: PricingConfig = {
+    perVideoCredits: Math.max(1, input.perVideoCredits ?? current.perVideoCredits),
+    packageSmallDiscount: Math.max(0, Math.min(100, input.packageSmallDiscount ?? current.packageSmallDiscount)),
+    packageMediumDiscount: Math.max(0, Math.min(100, input.packageMediumDiscount ?? current.packageMediumDiscount)),
+    packageTotalDiscount: Math.max(0, Math.min(100, input.packageTotalDiscount ?? current.packageTotalDiscount)),
+  };
+
+  await sql.query(
+    `insert into platform_settings (key, value)
+     values ('pricing_packages', $1)
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    [
+      JSON.stringify({
+        per_video_credits: updated.perVideoCredits,
+        package_small: { name: "Pacote Pequeno", discount_percent: updated.packageSmallDiscount },
+        package_medium: { name: "Pacote Médio", discount_percent: updated.packageMediumDiscount },
+        package_total: { name: "Pacote Total", discount_percent: updated.packageTotalDiscount },
+      }),
+    ],
+  );
+
+  await sql.query(
+    `insert into platform_settings (key, value)
+     values ('credit_costs', $1)
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    [JSON.stringify({ per_render: updated.perVideoCredits })],
+  );
+
+  return updated;
+}
+
 /**
  * Cria os renders das combinações selecionadas, reserva os créditos e cria os jobs — tudo numa transação:
  * se faltar crédito, nada é criado. Um render que já existe com o MESMO plano é reaproveitado (não cobra de novo).

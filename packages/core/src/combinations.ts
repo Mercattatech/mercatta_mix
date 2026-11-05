@@ -73,10 +73,9 @@ function safeStyleKey(key: string): string {
 }
 
 function requireBase(groups: Record<SegmentType, Item[]>) {
-  const missing = (["hook", "body", "cta"] as const).filter((t) => groups[t].length === 0);
-  if (missing.length > 0) {
-    const names = { hook: "Gancho", body: "Miolo", cta: "CTA" } as const;
-    throw new CombinationError(`Faltam trechos de: ${missing.map((t) => names[t]).join(", ")}`);
+  const total = groups.hook.length + groups.body.length + groups.cta.length + groups.extra.length;
+  if (total === 0) {
+    throw new CombinationError("Nenhum trecho salvo no projeto.");
   }
 }
 
@@ -88,7 +87,9 @@ export function countCombinations(
   const styles = Math.max(1, options.styles?.length ?? 1);
   const extra = counts.extra ?? 0;
   const extraFactor = extra === 0 ? 1 : options.extraMode === "optional" ? extra + 1 : extra;
-  return counts.hook * counts.body * counts.cta * extraFactor * styles;
+  const hasAny = counts.hook > 0 || counts.body > 0 || counts.cta > 0 || extra > 0;
+  if (!hasAny) return 0;
+  return (counts.hook || 1) * (counts.body || 1) * (counts.cta || 1) * extraFactor * styles;
 }
 
 /** Produto cartesiano gancho × miolo × (extra) × CTA × estilos, em ordem estável. */
@@ -101,7 +102,7 @@ export function generateCombinations(segments: SegmentRef[], options: Combinatio
   const styleList: (string | undefined)[] = styles.length > 1 ? styles : [styles[0]];
 
   const slots: (Item | null)[][] = sequence(options.extraPosition ?? "afterBody")
-    .filter((t) => t !== "extra" || groups.extra.length > 0)
+    .filter((t) => groups[t].length > 0)
     .map((t) => {
       const items: (Item | null)[] = [...groups[t]];
       if (t === "extra" && options.extraMode === "optional") items.push(null);

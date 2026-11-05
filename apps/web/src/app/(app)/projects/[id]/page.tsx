@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ForbiddenError, assertCanRead, assertCanWrite } from "@mercatta/server";
+import { ForbiddenError, assertCanRead, assertCanWrite, getPricingConfig } from "@mercatta/server";
 import { Alert, Badge } from "@/components/ui";
 import { getAppContext } from "@/lib/context";
 import { getDb } from "@/lib/db";
@@ -32,12 +32,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const ctx = await getAppContext();
   const db = getDb();
 
-  const project = (await db.query<{ id: string; name: string; organization_id: string }>("select id, name, organization_id from projects where id = $1", [id])).rows[0];
+  const project = (
+    await db.query<{ id: string; name: string; organization_id: string; settings: Record<string, unknown>; editing_instructions: string | null }>(
+      "select id, name, organization_id, settings, editing_instructions from projects where id = $1",
+      [id],
+    )
+  ).rows[0];
   // "não existe" e "não é seu" dão a mesma resposta (404)
   if (!project || !(await can(() => assertCanRead(db, ctx.user.id, project.organization_id)))) notFound();
   const canWrite = await can(() => assertCanWrite(db, ctx.user.id, project.organization_id));
 
-  const [videosRes, segmentsRes, combosRes, rendersRes, jobsRes, balanceRes] = await Promise.all([
+  const [videosRes, segmentsRes, combosRes, rendersRes, jobsRes, balanceRes, pricing] = await Promise.all([
     db.query<VideoRow>("select id, type, original_filename, status, error_pt, duration_ms, sort_order from source_videos where project_id = $1 order by sort_order, created_at", [id]),
     db.query<SegmentRow>("select id, source_video_id, type, start_word_idx, end_word_idx, start_ms, end_ms, label from segments where project_id = $1 order by sort_order, created_at", [id]),
     db.query<{ id: string; code: string }>("select id, code from combinations where project_id = $1", [id]),
@@ -48,6 +53,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       [id],
     ),
     db.query<{ b: string }>("select credit_balance($1) as b", [project.organization_id]),
+    getPricingConfig(db),
   ]);
 
   const videos = videosRes.rows;
@@ -88,7 +94,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
       <UploadPanel projectId={id} videos={videos} jobs={jobs} canWrite={canWrite} />
       <SegmentEditor projectId={id} videos={videos} words={words} segments={segments} canWrite={canWrite} />
-      <CombinePanel projectId={id} segments={segments} credits={credits} canWrite={canWrite} />
+      <CombinePanel
+        projectId={id}
+        segments={segments}
+        credits={credits}
+        canWrite={canWrite}
+        initialSettings={project.settings ?? {}}
+        initialInstructions={project.editing_instructions ?? ""}
+        pricing={pricing}
+      />
       <ResultsPanel projectId={id} renders={renders} jobs={jobs} />
     </div>
   );

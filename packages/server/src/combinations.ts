@@ -81,13 +81,22 @@ const SEGMENTS_SQL = `
   order by array_position(array['hook','body','cta','extra'], s.type), s.sort_order, s.created_at, s.id`;
 
 export async function loadCaptionStyle(sql: Sql, organizationId: string, projectId: string): Promise<Partial<CaptionStyle> | null> {
-  const r = await sql.query<{ config: Partial<CaptionStyle> | null }>(
-    `select cs.config from projects p
-       join caption_styles cs on cs.id = p.caption_style_id and (cs.organization_id is null or cs.organization_id = p.organization_id)
+  const r = await sql.query<{ config: Partial<CaptionStyle> | null; settings?: { burn_captions?: boolean; caption_style?: Partial<CaptionStyle> } }>(
+    `select cs.config, p.settings from projects p
+       left join caption_styles cs on cs.id = p.caption_style_id and (cs.organization_id is null or cs.organization_id = p.organization_id)
       where p.organization_id = $1 and p.id = $2`,
     [organizationId, projectId],
   );
-  if (r.rows[0]) return r.rows[0].config ?? {};
+  if (r.rows[0]) {
+    const s = r.rows[0].settings;
+    if (s?.burn_captions === false) {
+      return null;
+    }
+    return {
+      ...(r.rows[0].config ?? {}),
+      ...(s?.caption_style ?? {}),
+    };
+  }
   const def = await sql.query<{ config: Partial<CaptionStyle> | null }>(
     "select config from caption_styles where organization_id is null and is_default order by created_at limit 1",
   );
