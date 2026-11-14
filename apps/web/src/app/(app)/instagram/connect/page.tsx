@@ -18,8 +18,8 @@ export default function InstagramConnectPage({
   const [error, setError] = useState<string | null>(params.erro ?? null);
 
   // Opção avançada: Configurar OAuth App da Meta para redirecionamento oficial
-  const [showMetaAppConfig, setShowMetaAppConfig] = useState(false);
-  const [appId, setAppId] = useState("");
+  const [showMetaAppConfig, setShowMetaAppConfig] = useState(true);
+  const [appId, setAppId] = useState("24795114410148961");
   const [appSecret, setAppSecret] = useState("");
   const [savingApp, setSavingApp] = useState(false);
 
@@ -145,3 +145,4 @@ export default function InstagramConnectPage({
     </div>
   );
 }
+

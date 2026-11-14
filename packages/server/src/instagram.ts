@@ -32,33 +32,55 @@ export interface UpsertInstagramAccountInput {
 export interface InstagramOAuthConfig {
   appId: string;
   appSecret: string;
+  configId?: string;
 }
 
 export async function getInstagramOAuthConfig(sql: Sql): Promise<InstagramOAuthConfig | null> {
   const envId = process.env.META_APP_ID?.trim() || process.env.INSTAGRAM_APP_ID?.trim();
   const envSecret = process.env.META_APP_SECRET?.trim() || process.env.INSTAGRAM_APP_SECRET?.trim();
-  if (envId && envSecret) return { appId: envId, appSecret: envSecret };
+  const envConfigId = process.env.META_CONFIG_ID?.trim() || "1716691300162736";
+  if (envId && envSecret) return { appId: envId, appSecret: envSecret, configId: envConfigId };
 
-  const r = await sql.query<{ value: { app_id?: string; app_secret?: string } }>(
+  const r = await sql.query<{ value: { app_id?: string; app_secret?: string; config_id?: string } }>(
     "select value from platform_settings where key = 'instagram_oauth_config'",
   );
   const v = r.rows[0]?.value;
   if (v?.app_id && v?.app_secret) {
-    return { appId: v.app_id, appSecret: v.app_secret };
+    return { appId: v.app_id, appSecret: v.app_secret, configId: v.config_id || "1716691300162736" };
   }
   return null;
 }
 
-export async function saveInstagramOAuthConfig(sql: Sql, input: { appId: string; appSecret: string }): Promise<void> {
+export async function saveInstagramOAuthConfig(
+  sql: Sql,
+  input: { appId: string; appSecret: string; configId?: string },
+): Promise<void> {
   await sql.query(
     `insert into platform_settings (key, value)
      values ('instagram_oauth_config', $1)
      on conflict (key) do update set value = excluded.value, updated_at = now()`,
-    [JSON.stringify({ app_id: input.appId.trim(), app_secret: input.appSecret.trim() })],
+    [
+      JSON.stringify({
+        app_id: input.appId.trim() || "24795114410148961",
+        app_secret: input.appSecret.trim(),
+        config_id: input.configId?.trim() || "1716691300162736",
+      }),
+    ],
   );
 }
 
 export function buildInstagramOAuthUrl(config: InstagramOAuthConfig, redirectUri: string, state: string): string {
+  if (config.configId) {
+    const params = new URLSearchParams({
+      client_id: config.appId,
+      config_id: config.configId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      override_default_response_type: "true",
+      state,
+    });
+    return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
+  }
   const params = new URLSearchParams({
     client_id: config.appId,
     redirect_uri: redirectUri,
@@ -79,7 +101,61 @@ export async function exchangeInstagramOAuthCode(
     encryptionKeyRaw?: string;
   },
 ): Promise<InstagramAccountView> {
-  // 1. Troca o código pelo short-lived token no endpoint oficial do Instagram Login for Business
+  if (opts.config.configId) {
+    const tokenParams = new URLSearchParams({
+      client_id: opts.config.appId,
+      client_secret: opts.config.appSecret,
+      redirect_uri: opts.redirectUri,
+      code: opts.code,
+    });
+    const tokenRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?${tokenParams.toString()}`);
+    const tokenData = (await tokenRes.json().catch(() => ({}))) as {
+      access_token?: string;
+      error?: { message?: string };
+    };
+    if (!tokenRes.ok || !tokenData.access_token) {
+      throw new UserFacingError(tokenData.error?.message ?? "Não foi possível trocar o código OAuth na Meta Graph API.");
+    }
+
+    const userToken = tokenData.access_token;
+    const pagesRes = await fetch(
+      `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name}&access_token=${encodeURIComponent(userToken)}`,
+    );
+    const pagesData = (await pagesRes.json().catch(() => ({}))) as {
+      data?: Array<{
+        id: string;
+        name: string;
+        access_token?: string;
+        instagram_business_account?: { id: string; username?: string; name?: string };
+      }>;
+    };
+
+    const pageWithIg = pagesData.data?.find((p) => p.instagram_business_account?.id);
+    if (!pageWithIg || !pageWithIg.instagram_business_account) {
+      throw new UserFacingError(
+        "Nenhuma conta profissional do Instagram vinculada a uma Página do Facebook foi retornada na autorização.",
+      );
+    }
+
+    const ig = pageWithIg.instagram_business_account;
+    const username = ig.username || pageWithIg.name;
+    const displayName = ig.name ? `${ig.name} (@${username})` : `@${username}`;
+
+    return upsertInstagramAccount(
+      sql,
+      {
+        organizationId: opts.organizationId,
+        name: displayName,
+        username,
+        igUserId: ig.id,
+        accessToken: userToken,
+        verifyWithMeta: false,
+      },
+      opts.encryptionKeyRaw,
+    );
+  }
+
+  // Fallback: Instagram Login direto
   const form = new URLSearchParams({
     client_id: opts.config.appId,
     client_secret: opts.config.appSecret,
@@ -102,7 +178,6 @@ export async function exchangeInstagramOAuthCode(
   }
 
   let finalToken = tokenData.access_token;
-  // 2. Troca por token de longa duração (60 dias)
   try {
     const llUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(opts.config.appSecret)}&access_token=${encodeURIComponent(finalToken)}`;
     const llRes = await fetch(llUrl);
@@ -112,7 +187,6 @@ export async function exchangeInstagramOAuthCode(
     // mantém short-lived se falhar
   }
 
-  // 3. Busca dados do perfil (@username, id, name)
   const meUrl = `https://graph.instagram.com/v21.0/me?fields=id,user_id,username,name&access_token=${encodeURIComponent(finalToken)}`;
   const meRes = await fetch(meUrl);
   const meData = (await meRes.json().catch(() => ({}))) as {

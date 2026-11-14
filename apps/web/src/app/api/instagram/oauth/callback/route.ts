@@ -44,3 +44,4 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL(`/instagram/connect?returnTo=${encodeURIComponent(returnTo)}&erro=${encodeURIComponent(msg)}`, req.url), 302);
   }
 }
+
