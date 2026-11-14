@@ -30,13 +30,14 @@ export async function GET(req: Request) {
     if (!config.appSecret) {
       return NextResponse.redirect(
         new URL(
-          `/instagram/connect?returnTo=${encodeURIComponent(returnTo)}&erro=${encodeURIComponent("Permissão concedida na Meta! Cole apenas o App Secret abaixo para concluir a troca do token.")}`,
+          `/instagram/connect?returnTo=${encodeURIComponent(returnTo)}&code=${encodeURIComponent(code)}&erro=${encodeURIComponent("Permissão do Instagram autorizada com sucesso! Cole apenas a Chave Secreta do Aplicativo (App Secret) abaixo para finalizar.")}`,
           req.url,
         ),
         302,
       );
     }
-    const base = (process.env.META_REDIRECT_BASE || serverEnv().APP_URL || url.origin).replace(/\/$/, "");
+    const rawBase = process.env.META_REDIRECT_BASE || (url.origin.includes("localhost") ? "https://9b0f52fcf4d3e4.app.lhr.life" : url.origin);
+    const base = rawBase.replace(/\/$/, "");
     const redirectUri = `${base}${url.pathname}`;
     await exchangeInstagramOAuthCode(db, {
       organizationId: ctx.organization.id,

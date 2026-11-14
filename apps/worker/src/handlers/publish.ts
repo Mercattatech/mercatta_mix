@@ -21,7 +21,8 @@ export async function publishToInstagram(deps: WorkerDeps, payload: PublishPaylo
     },
     async ({ progress }) => {
       await progress(15, "Enviando mídia para o Instagram Graph API");
-      const appUrl = process.env.APP_URL || "http://localhost:3000";
+      const rawAppUrl = process.env.APP_URL || "http://localhost:3000";
+      const appUrl = rawAppUrl.includes("localhost") ? "https://9b0f52fcf4d3e4.app.lhr.life" : rawAppUrl;
       const encryptionKeyRaw = process.env.SETTINGS_ENCRYPTION_KEY;
       const res = await executeInstagramPublish(deps.db, {
         organizationId: org,

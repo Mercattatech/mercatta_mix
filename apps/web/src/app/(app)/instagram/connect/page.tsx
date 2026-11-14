@@ -7,7 +7,7 @@ import { Alert, Button, Card, Input, Spinner } from "@/components/ui";
 export default function InstagramConnectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnTo?: string; erro?: string }>;
+  searchParams: Promise<{ returnTo?: string; erro?: string; code?: string }>;
 }) {
   const params = use(searchParams);
   const returnTo = params.returnTo || "/instagram";
@@ -21,6 +21,7 @@ export default function InstagramConnectPage({
   const [showMetaAppConfig, setShowMetaAppConfig] = useState(true);
   const [appId, setAppId] = useState("24795114410148961");
   const [appSecret, setAppSecret] = useState("");
+  const [oauthCode, setOauthCode] = useState(params.code ?? "");
   const [savingApp, setSavingApp] = useState(false);
 
   async function handleOneClickConnect(e: React.FormEvent) {
@@ -60,10 +61,16 @@ export default function InstagramConnectPage({
       const res = await fetch("/api/instagram/oauth/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appId, appSecret }),
+        body: JSON.stringify({ appId, appSecret, code: oauthCode.trim() || undefined }),
       });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; exchanged?: boolean; error?: string };
       if (!res.ok) {
-        setError("Não foi possível salvar as credenciais do App Meta.");
+        setError(data.error ?? "Não foi possível validar o código/App Secret na Meta.");
+        return;
+      }
+      if (data.exchanged) {
+        router.push(returnTo);
+        router.refresh();
         return;
       }
       window.location.href = `/api/instagram/oauth/start?returnTo=${encodeURIComponent(returnTo)}`;
@@ -132,11 +139,15 @@ export default function InstagramConnectPage({
                 <Input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="Ex.: 104928374619283" required />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted">App Secret</label>
-                <Input type="password" value={appSecret} onChange={(e) => setAppSecret(e.target.value)} placeholder="••••••••••••" required />
+                <label className="text-xs text-muted">App Secret (Chave Secreta do Aplicativo na Meta)</label>
+                <Input type="password" value={appSecret} onChange={(e) => setAppSecret(e.target.value)} placeholder="Cole a Chave Secreta do App Meta" required />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted">URL ou Código retornado (opcional — se já autorizou na janela)</label>
+                <Input value={oauthCode} onChange={(e) => setOauthCode(e.target.value)} placeholder="Cole aqui a URL que apareceu com ?code=AQLq8..." />
               </div>
               <Button type="submit" size="sm" className="w-full" disabled={savingApp}>
-                {savingApp ? <Spinner /> : null} Salvar e Redirecionar para Login Oficial do Instagram
+                {savingApp ? <Spinner /> : null} Concluir Conexão Oficial com o Instagram
               </Button>
             </form>
           )}
