@@ -62,3 +62,4 @@ create policy social_schedules_write on public.social_schedules for all to app_u
   using (public.can_write_org(organization_id)) with check (public.can_write_org(organization_id));
 
 grant select, insert, update, delete on public.instagram_accounts, public.social_schedules to app_user;
+

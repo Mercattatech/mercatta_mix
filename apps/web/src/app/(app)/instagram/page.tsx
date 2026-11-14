@@ -47,12 +47,18 @@ export default async function InstagramQueuePage() {
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight">Central do Instagram</h1>
           <p className="mt-1 text-muted">
-            Contas conectadas via Meta Graph API e calendário geral de publicações em massa (Reels, Post e Carrossel).
+            Conecte seu Instagram com um botão e acompanhe o calendário dos seus criativos (Reels, Post e Carrossel).
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <Badge tone="primary">{scheduledCount} na fila</Badge>
           <Badge tone="success">{publishedCount} publicado(s)</Badge>
+          <a
+            href="/api/instagram/oauth/start?returnTo=/instagram"
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-4 font-display text-xs font-semibold text-white shadow transition hover:opacity-95"
+          >
+            + Conectar com o Instagram
+          </a>
         </div>
       </div>
 
@@ -138,3 +144,4 @@ export default async function InstagramQueuePage() {
     </div>
   );
 }
+

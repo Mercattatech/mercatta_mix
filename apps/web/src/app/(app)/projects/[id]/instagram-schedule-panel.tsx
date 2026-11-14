@@ -4,30 +4,34 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { InstagramAccountView, InstagramFormat, SocialScheduleView } from "@mercatta/server";
 import { Alert, Badge, Button, Card, Input, Spinner } from "@/components/ui";
+import { formatDuration } from "@/lib/utils";
 import type { RenderRow } from "./types";
 
 const WEEKDAYS = [
-  { day: 1, short: "Seg", full: "Segunda" },
-  { day: 2, short: "Ter", full: "Terça" },
-  { day: 3, short: "Qua", full: "Quarta" },
-  { day: 4, short: "Qui", full: "Quinta" },
-  { day: 5, short: "Sex", full: "Sexta" },
-  { day: 6, short: "Sáb", full: "Sábado" },
-  { day: 0, short: "Dom", full: "Domingo" },
+  { day: 1, short: "Seg" },
+  { day: 2, short: "Ter" },
+  { day: 3, short: "Qua" },
+  { day: 4, short: "Qui" },
+  { day: 5, short: "Sex" },
+  { day: 6, short: "Sáb" },
+  { day: 0, short: "Dom" },
 ];
 
-const FORMAT_LABELS: Record<InstagramFormat, { title: string; subtitle: string }> = {
+const FORMAT_LABELS: Record<InstagramFormat, { title: string; badge: string; desc: string }> = {
   REELS: {
     title: "Reels",
-    subtitle: "1 vídeo 9:16 por publicação no Reels (+ opção de exibir no Feed)",
+    badge: "🎬 Reels",
+    desc: "Vídeo vertical 9:16 no Reels + Feed",
   },
   POST: {
-    title: "Post (Feed)",
-    subtitle: "1 vídeo por publicação direta na grade principal do perfil",
+    title: "Post no Feed",
+    badge: "📱 Post",
+    desc: "Publicação direta no Feed principal",
   },
   CAROUSEL: {
-    title: "Carrossel em Lote",
-    subtitle: "Agrupa de 2 a 10 vídeos gerados em cada publicação deslizável",
+    title: "Carrossel",
+    badge: "🗂️ Carrossel",
+    desc: "Agrupa múltiplos criativos num post deslizável",
   },
 };
 
@@ -44,10 +48,7 @@ const STATUS_BADGE: Record<
 
 function todayISO(): string {
   const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function toDatetimeLocalValue(iso: string): string {
@@ -55,6 +56,14 @@ function toDatetimeLocalValue(iso: string): string {
   if (Number.isNaN(dt.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+function InstagramIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${className} fill-current`} aria-hidden="true">
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+    </svg>
+  );
 }
 
 export function InstagramSchedulePanel({
@@ -75,30 +84,25 @@ export function InstagramSchedulePanel({
   const router = useRouter();
   const succeededRenders = useMemo(() => renders.filter((r) => r.status === "succeeded"), [renders]);
 
-  const [accounts, setAccounts] = useState<InstagramAccountView[]>(initialAccounts);
   const [selectedAccountId, setSelectedAccountId] = useState<string>(initialAccounts[0]?.id ?? "");
-  const [showAddAccount, setShowAddAccount] = useState(initialAccounts.length === 0);
+  const [selectedRenderIds, setSelectedRenderIds] = useState<string[]>(() =>
+    renders.filter((r) => r.status === "succeeded").map((r) => r.id),
+  );
+  const [previewRenderId, setPreviewRenderId] = useState<string | null>(null);
 
-  // Formulário de nova conta Instagram Graph API
-  const [accName, setAccName] = useState("");
-  const [accUsername, setAccUsername] = useState("");
-  const [accIgUserId, setAccIgUserId] = useState("");
-  const [accToken, setAccToken] = useState("");
-  const [savingAccount, setSavingAccount] = useState(false);
-
-  // Configuração da programação em massa
+  // Formato e agendamento
   const [format, setFormat] = useState<InstagramFormat>("REELS");
   const [carouselSize, setCarouselSize] = useState<number>(3);
-  const [shareToFeed, setShareToFeed] = useState<boolean>(true);
+  const [planType, setPlanType] = useState<"bulk_slots" | "single_datetime">("bulk_slots");
+  const [singleDate, setSingleDate] = useState<string>(todayISO());
+  const [singleTime, setSingleTime] = useState<string>("12:00");
+
   const [startDate, setStartDate] = useState<string>(todayISO());
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([1, 2, 3, 4, 5, 6, 0]);
-  const [scheduleMode, setScheduleMode] = useState<"fixed_times" | "interval">("fixed_times");
-  const [timesInput, setTimesInput] = useState<string>("09:00, 13:00, 19:00");
-  const [intervalMinutes, setIntervalMinutes] = useState<number>(180);
-  const [windowStart, setWindowStart] = useState<string>("08:00");
-  const [windowEnd, setWindowEnd] = useState<string>("21:00");
+  const [timeSlots, setTimeSlots] = useState<string[]>(["09:00", "13:00", "19:00"]);
+  const [newTimeSlot, setNewTimeSlot] = useState<string>("21:00");
   const [captionTemplate, setCaptionTemplate] = useState<string>(
-    `${projectName} — Variação {codigo} ({indice}/{total})\n\n#reels #instagram #conteudodigital`,
+    `${projectName}\n\n#reels #instagram #conteudodigital`,
   );
 
   const [busySchedule, setBusySchedule] = useState(false);
@@ -107,97 +111,72 @@ export function InstagramSchedulePanel({
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const parsedTimes = useMemo(
-    () =>
-      timesInput
-        .split(/[,\s;]+/)
-        .map((s) => s.trim())
-        .filter((s) => /^\d{1,2}:\d{2}$/.test(s)),
-    [timesInput],
+  const activeAccount = useMemo(
+    () => initialAccounts.find((a) => a.id === selectedAccountId) ?? initialAccounts[0] ?? null,
+    [initialAccounts, selectedAccountId],
   );
 
-  const slotsPerDay = useMemo(() => {
-    if (scheduleMode === "fixed_times") return Math.max(1, parsedTimes.length);
-    const parseMin = (hhmm: string) => {
-      const [h, m] = hhmm.split(":").map(Number);
-      return (h || 0) * 60 + (m || 0);
-    };
-    const diff = Math.max(0, parseMin(windowEnd) - parseMin(windowStart));
-    return Math.max(1, Math.floor(diff / Math.max(15, intervalMinutes)) + 1);
-  }, [scheduleMode, parsedTimes.length, windowStart, windowEnd, intervalMinutes]);
+  // Mapa de agendamentos existentes por renderId para mostrar o selo direto no card do criativo
+  const scheduleByRenderId = useMemo(() => {
+    const map = new Map<string, SocialScheduleView>();
+    for (const s of initialSchedules) {
+      if (s.status === "canceled") continue;
+      for (const rId of s.renderIds) {
+        map.set(rId, s);
+      }
+    }
+    return map;
+  }, [initialSchedules]);
+
+  const effectiveRenderIds = useMemo(() => {
+    const valid = new Set(succeededRenders.map((r) => r.id));
+    const filtered = selectedRenderIds.filter((id) => valid.has(id));
+    return filtered.length > 0 ? filtered : succeededRenders.map((r) => r.id);
+  }, [selectedRenderIds, succeededRenders]);
 
   const totalPostsToCreate = useMemo(() => {
-    if (succeededRenders.length === 0) return 0;
-    if (format !== "CAROUSEL") return succeededRenders.length;
+    const n = effectiveRenderIds.length;
+    if (n === 0) return 0;
+    if (format !== "CAROUSEL") return n;
     const size = Math.max(2, Math.min(10, carouselSize));
-    if (succeededRenders.length <= size) return 1;
-    const chunks = Math.ceil(succeededRenders.length / size);
-    const remainder = succeededRenders.length % size;
-    return remainder === 1 && size < 10 ? chunks - 1 : chunks;
-  }, [succeededRenders.length, format, carouselSize]);
+    if (n <= size) return 1;
+    const chunks = Math.ceil(n / size);
+    const rem = n % size;
+    return rem === 1 && size < 10 ? chunks - 1 : chunks;
+  }, [effectiveRenderIds.length, format, carouselSize]);
 
-  const estimatedDays = useMemo(() => {
-    if (totalPostsToCreate === 0) return 0;
-    return Math.ceil(totalPostsToCreate / slotsPerDay);
-  }, [totalPostsToCreate, slotsPerDay]);
+  function toggleCreative(id: string) {
+    setSelectedRenderIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function addTimeSlot() {
+    const clean = newTimeSlot.trim();
+    if (!/^\d{2}:\d{2}$/.test(clean)) return;
+    setTimeSlots((prev) => Array.from(new Set([...prev, clean])).sort());
+  }
+
+  function removeTimeSlot(slot: string) {
+    setTimeSlots((prev) => (prev.length > 1 ? prev.filter((s) => s !== slot) : prev));
+  }
 
   function toggleDay(day: number) {
     setDaysOfWeek((prev) => {
-      if (prev.includes(day)) {
-        return prev.length > 1 ? prev.filter((d) => d !== day) : prev;
-      }
+      if (prev.includes(day)) return prev.length > 1 ? prev.filter((d) => d !== day) : prev;
       return [...prev, day];
     });
   }
 
-  async function handleSaveAccount(e: React.FormEvent) {
-    e.preventDefault();
-    setSavingAccount(true);
-    setError(null);
-    setSuccessMsg(null);
-    try {
-      const res = await fetch("/api/instagram/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: accName.trim() || accUsername.trim() || "Instagram Principal",
-          username: accUsername.trim().replace(/^@/, "") || null,
-          igUserId: accIgUserId.trim(),
-          accessToken: accToken.trim(),
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { account?: InstagramAccountView; error?: string };
-      if (!res.ok || !data.account) {
-        setError(data.error ?? "Não foi possível salvar a conta do Instagram.");
-        return;
-      }
-      setAccounts((prev) => {
-        const filtered = prev.filter((a) => a.id !== data.account!.id);
-        return [...filtered, data.account!];
-      });
-      setSelectedAccountId(data.account.id);
-      setShowAddAccount(false);
-      setAccName("");
-      setAccUsername("");
-      setAccIgUserId("");
-      setAccToken("");
-      setSuccessMsg(`Conta ${data.account.name} conectada com sucesso!`);
-      router.refresh();
-    } catch {
-      setError("Sem conexão ao salvar a conta do Instagram.");
-    } finally {
-      setSavingAccount(false);
-    }
+  function connectInstagramRedirect() {
+    window.location.href = `/api/instagram/oauth/start?returnTo=${encodeURIComponent(`/projects/${projectId}`)}`;
   }
 
-  async function handleBulkSchedule() {
-    if (!selectedAccountId) {
-      setError("Conecte ou selecione uma conta do Instagram antes de agendar.");
-      setShowAddAccount(true);
+  async function handleScheduleCreatives() {
+    if (!activeAccount) {
+      connectInstagramRedirect();
       return;
     }
-    if (succeededRenders.length === 0) {
-      setError("Aguarde pelo menos 1 vídeo ficar pronto na Etapa 4 antes de programar no Instagram.");
+    if (effectiveRenderIds.length === 0) {
+      setError("Selecione pelo menos 1 criativo pronto para programar.");
       return;
     }
     setBusySchedule(true);
@@ -208,32 +187,30 @@ export function InstagramSchedulePanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          instagramAccountId: selectedAccountId,
+          instagramAccountId: activeAccount.id,
           format,
           carouselSize: format === "CAROUSEL" ? carouselSize : undefined,
-          startDate,
-          daysOfWeek,
-          scheduleMode,
-          timesOfDay: scheduleMode === "fixed_times" ? parsedTimes : undefined,
-          intervalMinutes: scheduleMode === "interval" ? intervalMinutes : undefined,
-          windowStart: scheduleMode === "interval" ? windowStart : undefined,
-          windowEnd: scheduleMode === "interval" ? windowEnd : undefined,
+          renderIds: effectiveRenderIds,
+          startDate: planType === "single_datetime" ? singleDate : startDate,
+          daysOfWeek: planType === "single_datetime" ? [0, 1, 2, 3, 4, 5, 6] : daysOfWeek,
+          scheduleMode: "fixed_times",
+          timesOfDay: planType === "single_datetime" ? [singleTime] : timeSlots,
           timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
           captionTemplate,
-          shareToFeed,
+          shareToFeed: true,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { count?: number; error?: string };
       if (!res.ok) {
-        setError(data.error ?? "Falha ao criar a programação em massa.");
+        setError(data.error ?? "Não foi possível agendar os criativos.");
         return;
       }
       setSuccessMsg(
-        `${data.count ?? totalPostsToCreate} publicações (${FORMAT_LABELS[format].title}) programadas na fila do Instagram!`,
+        `${data.count ?? totalPostsToCreate} publicação(ões) de ${FORMAT_LABELS[format].title} programada(s) para ${activeAccount.name}!`,
       );
       router.refresh();
     } catch {
-      setError("Sem conexão ao programar lote no Instagram.");
+      setError("Sem conexão ao programar os criativos.");
     } finally {
       setBusySchedule(false);
     }
@@ -264,103 +241,202 @@ export function InstagramSchedulePanel({
 
   return (
     <section className="space-y-6" aria-labelledby="step-instagram">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h2 id="step-instagram" className="font-display text-2xl font-semibold">
-            5. Programar em Massa no Instagram (Reels, Post e Carrossel)
-          </h2>
-          <p className="mt-1 text-sm text-muted">
-            Distribua os vídeos gerados automaticamente por data, dias da semana, horários fixos ou intervalo de horas via API Oficial da Meta.
+      {/* Cabeçalho + Botão de Conexão 1-Clique com o Instagram */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-surface p-5">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 via-pink-500 to-purple-600 text-white">
+              <InstagramIcon className="h-4 w-4" />
+            </span>
+            <h2 id="step-instagram" className="font-display text-2xl font-semibold">
+              5. Conectar Instagram e Programar Criativos
+            </h2>
+          </div>
+          <p className="text-sm text-muted">
+            Conecte seu perfil com um clique, selecione os criativos abaixo e programe como <strong>Reels</strong>, <strong>Post</strong> ou <strong>Carrossel</strong>.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setShowAddAccount((v) => !v)}>
-          {showAddAccount ? "Fechar configuração de conta" : "+ Conectar / Trocar Conta Instagram"}
-        </Button>
+
+        {activeAccount ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              <div className="text-left leading-tight">
+                <p className="text-xs font-semibold text-fg">
+                  {activeAccount.username ? `@${activeAccount.username}` : activeAccount.name}
+                </p>
+                <p className="text-[11px] text-muted">Instagram conectado</p>
+              </div>
+              {initialAccounts.length > 1 && (
+                <select
+                  value={activeAccount.id}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="ml-2 rounded-lg border border-border bg-surface px-2 py-1 text-xs text-fg"
+                >
+                  {initialAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.username ? `@${acc.username}` : acc.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={connectInstagramRedirect}
+              className="rounded-xl border border-border bg-surface-2 px-3.5 py-2 text-xs font-medium text-fg transition hover:bg-surface"
+            >
+              + Outra conta
+            </button>
+          </div>
+        ) : (
+          <button
+            id="connect-instagram-btn"
+            type="button"
+            onClick={connectInstagramRedirect}
+            className="inline-flex h-12 items-center gap-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-6 font-display text-sm font-semibold text-white shadow-lg transition hover:opacity-95"
+          >
+            <InstagramIcon className="h-5 w-5" />
+            Conectar com o Instagram
+          </button>
+        )}
       </div>
 
       {error && <Alert>{error}</Alert>}
       {successMsg && <Alert tone="success">{successMsg}</Alert>}
 
-      {showAddAccount && canWrite && (
-        <Card className="space-y-4 border-primary/40 bg-surface-2/60">
-          <div>
-            <h3 className="font-display text-lg font-medium">Conectar Conta Profissional do Instagram (Meta Graph API)</h3>
-            <p className="text-xs text-muted">
-              Informe o <strong>IG User ID</strong> (ID da conta comercial do Instagram vinculada à Página do Facebook) e o <strong>Access Token</strong> de longa duração do seu App na Meta.
-            </p>
-          </div>
-          <form onSubmit={handleSaveAccount} className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-xs text-muted">Nome de identificação</label>
-              <Input
-                placeholder="Ex.: Instagram Mercatta Oficial"
-                value={accName}
-                onChange={(e) => setAccName(e.target.value)}
-                required
-              />
+      {/* Estúdio Visual de Criativos + Programação */}
+      <div className="grid gap-6 lg:grid-cols-12">
+        {/* Coluna Esquerda (7 cols): Grade Visual de Criativos */}
+        <Card className="space-y-4 lg:col-span-7">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+            <div>
+              <h3 className="font-display text-base font-semibold">
+                Seus Criativos Prontos ({effectiveRenderIds.length} de {succeededRenders.length} selecionados)
+              </h3>
+              <p className="text-xs text-muted">
+                Clique nos criativos que deseja programar ou selecione todos o lote.
+              </p>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted">@usuario (opcional)</label>
-              <Input
-                placeholder="Ex.: @mercatta.oficial"
-                value={accUsername}
-                onChange={(e) => setAccUsername(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted">Instagram Business Account ID (IG User ID)</label>
-              <Input
-                placeholder="Ex.: 17841405822304914"
-                value={accIgUserId}
-                onChange={(e) => setAccIgUserId(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted">Meta Graph API Access Token</label>
-              <Input
-                type="password"
-                placeholder="EAABsbCS1iHgBO..."
-                value={accToken}
-                onChange={(e) => setAccToken(e.target.value)}
-                required
-              />
-            </div>
-            <div className="sm:col-span-2 flex items-center justify-end gap-2 pt-1">
-              <Button type="submit" disabled={savingAccount}>
-                {savingAccount ? <Spinner /> : null} Salvar e Validar Conta Instagram
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      <Card className="space-y-6">
-        {/* 1. Seleção da conta e do formato */}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">Conta de destino no Instagram</label>
-            {accounts.length > 0 ? (
-              <select
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm text-fg focus:border-primary focus:outline-none"
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRenderIds(succeededRenders.map((r) => r.id))}
+                className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium hover:bg-surface"
               >
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} {acc.username ? `(@${acc.username})` : ""} — ID: {acc.igUserId}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-200">
-                Nenhuma conta conectada ainda. Preencha o quadro acima para conectar seu Instagram Business.
-              </div>
-            )}
+                Selecionar todos ({succeededRenders.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRenderIds(succeededRenders.slice(0, 10).map((r) => r.id))}
+                className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium hover:bg-surface"
+              >
+                Top 10
+              </button>
+            </div>
           </div>
 
+          {previewRenderId && (
+            <div className="rounded-xl border border-primary/40 bg-surface-2 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-mono text-xs font-semibold">
+                  Pré-visualização do criativo{" "}
+                  {succeededRenders.find((r) => r.id === previewRenderId)?.code}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewRenderId(null)}
+                  className="text-xs text-muted hover:text-fg"
+                >
+                  Fechar ✕
+                </button>
+              </div>
+              <video
+                key={previewRenderId}
+                src={`/api/renders/${previewRenderId}/download`}
+                controls
+                autoPlay
+                className="mx-auto max-h-80 rounded-lg bg-black"
+              />
+            </div>
+          )}
+
+          {succeededRenders.length > 0 ? (
+            <div className="grid max-h-[28rem] grid-cols-2 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-3">
+              {succeededRenders.map((r, idx) => {
+                const isSelected = effectiveRenderIds.includes(r.id);
+                const existingSched = scheduleByRenderId.get(r.id);
+                return (
+                  <div
+                    key={r.id}
+                    onClick={() => toggleCreative(r.id)}
+                    className={`cursor-pointer rounded-xl border p-3 transition ${
+                      isSelected
+                        ? "border-primary bg-primary/10 ring-1 ring-primary"
+                        : "border-border bg-surface-2/40 opacity-70 hover:opacity-100"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="h-4 w-4 accent-primary"
+                        />
+                        <span className="font-mono text-xs font-semibold">{r.code}</span>
+                      </div>
+                      <span className="text-[11px] text-muted">#{idx + 1}</span>
+                    </div>
+
+                    <p className="mt-1 text-xs text-muted">{formatDuration(r.duration_ms)}</p>
+
+                    {existingSched ? (
+                      <div className="mt-2 rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-300">
+                        📅{" "}
+                        {new Date(existingSched.scheduledAt).toLocaleString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-[11px] text-muted">Pronto p/ postar</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewRenderId(r.id);
+                          }}
+                          className="text-[11px] font-medium text-primary hover:underline"
+                        >
+                          ▶ Ver
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-12 text-center text-sm text-muted">
+              Gere seus vídeos na Etapa 3 para que seus criativos apareçam aqui prontos para agendar.
+            </div>
+          )}
+        </Card>
+
+        {/* Coluna Direita (5 cols): Configuração Visual de Formato, Data e Hora */}
+        <Card className="space-y-5 lg:col-span-5">
+          <div>
+            <h3 className="font-display text-base font-semibold">Configurar Publicação</h3>
+            <p className="text-xs text-muted">Escolha onde os criativos selecionados vão entrar e os horários.</p>
+          </div>
+
+          {/* 1. Formato: Reels, Post ou Carrossel */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">Formato da Publicação</label>
+            <label className="text-xs font-medium text-muted uppercase tracking-wider">1. Formato no Instagram</label>
             <div className="grid grid-cols-3 gap-2">
               {(["REELS", "POST", "CAROUSEL"] as const).map((fmt) => {
                 const active = format === fmt;
@@ -369,230 +445,194 @@ export function InstagramSchedulePanel({
                     key={fmt}
                     type="button"
                     onClick={() => setFormat(fmt)}
-                    className={`rounded-xl border p-3 text-left transition ${
+                    className={`rounded-xl border p-2.5 text-left transition ${
                       active
-                        ? "border-primary bg-primary/10 ring-1 ring-primary"
-                        : "border-border bg-surface-2/40 hover:border-border/80"
+                        ? "border-primary bg-primary/15 ring-1 ring-primary"
+                        : "border-border bg-surface-2/40 hover:bg-surface-2"
                     }`}
                   >
-                    <p className="font-display text-sm font-semibold">{FORMAT_LABELS[fmt].title}</p>
-                    <p className="mt-0.5 text-[11px] leading-tight text-muted">{FORMAT_LABELS[fmt].subtitle}</p>
+                    <p className="font-display text-xs font-semibold">{FORMAT_LABELS[fmt].badge}</p>
+                    <p className="mt-0.5 text-[10px] leading-tight text-muted">{FORMAT_LABELS[fmt].desc}</p>
                   </button>
                 );
               })}
             </div>
           </div>
-        </div>
 
-        {/* Opções específicas de Reels ou Carrossel */}
-        {format === "REELS" && (
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-2/30 px-4 py-3">
-            <input
-              id="share-to-feed"
-              type="checkbox"
-              checked={shareToFeed}
-              onChange={(e) => setShareToFeed(e.target.checked)}
-              className="h-4 w-4 accent-primary"
-            />
-            <label htmlFor="share-to-feed" className="text-sm">
-              Compartilhar Reels também na grade principal do Feed do perfil
-            </label>
-          </div>
-        )}
-
-        {format === "CAROUSEL" && (
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium">Quantidade de vídeos por Carrossel</p>
-              <p className="text-xs text-muted">
-                O sistema agrupa os vídeos gerados em sequência (2 a 10 vídeos por post de carrossel).
-              </p>
+          {format === "CAROUSEL" && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium">Criativos por Carrossel:</span>
+                <div className="flex gap-1">
+                  {[2, 3, 4, 5, 6, 10].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setCarouselSize(n)}
+                      className={`h-7 w-7 rounded-md border text-xs font-semibold ${
+                        carouselSize === n
+                          ? "border-primary bg-primary text-white"
+                          : "border-border bg-surface"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {[2, 3, 4, 5, 6, 8, 10].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setCarouselSize(n)}
-                  className={`h-9 w-9 rounded-lg border text-sm font-semibold transition ${
-                    carouselSize === n
-                      ? "border-primary bg-primary text-white"
-                      : "border-border bg-surface hover:bg-surface-2"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* 2. Configuração de Tempo, Hora e Dia */}
-        <div className="grid gap-4 border-t border-border pt-5 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">Data de início</label>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">Dias da semana permitidos</label>
-            <div className="flex flex-wrap gap-1.5">
-              {WEEKDAYS.map((w) => {
-                const selected = daysOfWeek.includes(w.day);
-                return (
-                  <button
-                    key={w.day}
-                    type="button"
-                    onClick={() => toggleDay(w.day)}
-                    title={w.full}
-                    className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                      selected
-                        ? "border-primary bg-primary/15 text-fg ring-1 ring-primary/50"
-                        : "border-border bg-surface text-muted hover:text-fg"
-                    }`}
-                  >
-                    {w.short}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
+          {/* 2. Modo de Programação: Grade em Massa vs Data/Hora Única */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">Regra de Horários por Dia</label>
+            <label className="text-xs font-medium text-muted uppercase tracking-wider">2. Dia e Horário</label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setScheduleMode("fixed_times")}
-                className={`rounded-xl border p-3 text-left text-xs transition ${
-                  scheduleMode === "fixed_times"
-                    ? "border-primary bg-primary/10 font-medium text-fg"
-                    : "border-border bg-surface text-muted"
+                onClick={() => setPlanType("bulk_slots")}
+                className={`rounded-xl border p-2.5 text-xs font-medium transition ${
+                  planType === "bulk_slots"
+                    ? "border-primary bg-primary/15 text-fg"
+                    : "border-border bg-surface-2/40 text-muted"
                 }`}
               >
-                Horários fixos no dia
-                <span className="block text-[11px] text-muted">Ex.: 09:00, 13:00, 19:00</span>
+                📅 Distribuir por dias e horários
               </button>
               <button
                 type="button"
-                onClick={() => setScheduleMode("interval")}
-                className={`rounded-xl border p-3 text-left text-xs transition ${
-                  scheduleMode === "interval"
-                    ? "border-primary bg-primary/10 font-medium text-fg"
-                    : "border-border bg-surface text-muted"
+                onClick={() => setPlanType("single_datetime")}
+                className={`rounded-xl border p-2.5 text-xs font-medium transition ${
+                  planType === "single_datetime"
+                    ? "border-primary bg-primary/15 text-fg"
+                    : "border-border bg-surface-2/40 text-muted"
                 }`}
               >
-                Intervalo em horas/minutos
-                <span className="block text-[11px] text-muted">Ex.: a cada 3 horas</span>
+                ⏰ Data e hora específica
               </button>
             </div>
+
+            {planType === "bulk_slots" ? (
+              <div className="space-y-3 rounded-xl border border-border bg-surface-2/30 p-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted">Começar no dia</label>
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-muted">Dias da semana</label>
+                  <div className="flex flex-wrap gap-1">
+                    {WEEKDAYS.map((w) => {
+                      const on = daysOfWeek.includes(w.day);
+                      return (
+                        <button
+                          key={w.day}
+                          type="button"
+                          onClick={() => toggleDay(w.day)}
+                          className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${
+                            on
+                              ? "border-primary bg-primary text-white"
+                              : "border-border bg-surface text-muted"
+                          }`}
+                        >
+                          {w.short}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted">Horários de postagem no dia</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {timeSlots.map((slot) => (
+                      <span
+                        key={slot}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 font-mono text-xs font-semibold"
+                      >
+                        {slot}
+                        <button
+                          type="button"
+                          onClick={() => removeTimeSlot(slot)}
+                          className="text-muted hover:text-fg"
+                          title="Remover horário"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <Input
+                      type="time"
+                      value={newTimeSlot}
+                      onChange={(e) => setNewTimeSlot(e.target.value)}
+                      className="h-9"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={addTimeSlot}>
+                      + Adicionar horário
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-surface-2/30 p-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted">Dia</label>
+                  <Input type="date" value={singleDate} onChange={(e) => setSingleDate(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted">Hora</label>
+                  <Input type="time" value={singleTime} onChange={(e) => setSingleTime(e.target.value)} />
+                </div>
+              </div>
+            )}
           </div>
 
-          {scheduleMode === "fixed_times" ? (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted uppercase tracking-wider">
-                Horários do dia (separados por vírgula)
-              </label>
-              <Input
-                value={timesInput}
-                onChange={(e) => setTimesInput(e.target.value)}
-                placeholder="09:00, 13:00, 19:00"
-              />
-              <p className="text-[11px] text-muted">
-                {parsedTimes.length} horário(s) por dia: {parsedTimes.join(" • ") || "nenhum válido"}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted">A cada (min)</label>
-                <select
-                  value={intervalMinutes}
-                  onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                  className="h-11 w-full rounded-xl border border-border bg-surface px-2.5 text-sm text-fg"
-                >
-                  <option value={30}>30 min</option>
-                  <option value={60}>1 hora</option>
-                  <option value={120}>2 horas</option>
-                  <option value={180}>3 horas</option>
-                  <option value={240}>4 horas</option>
-                  <option value={360}>6 horas</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted">Das</label>
-                <Input type="time" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted">Até</label>
-                <Input type="time" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 3. Legenda (Caption) da publicação */}
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">
-              Legenda da publicação no Instagram (Caption + Hashtags)
-            </label>
-            <span className="text-[11px] text-muted">
-              Variáveis: <code>{"{projeto}"}</code>, <code>{"{codigo}"}</code>, <code>{"{indice}"}</code>, <code>{"{total}"}</code>
-            </span>
-          </div>
-          <textarea
-            rows={3}
-            value={captionTemplate}
-            onChange={(e) => setCaptionTemplate(e.target.value)}
-            placeholder="Escreva a legenda e as hashtags que irão na descrição do Reel/Post/Carrossel..."
-            className="w-full rounded-xl border border-border bg-surface p-3 text-sm text-fg placeholder:text-muted focus:border-primary focus:outline-none"
-          />
-        </div>
-
-        {/* 4. Resumo e botão de disparo em massa */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-surface-2 p-4">
+          {/* 3. Legenda */}
           <div className="space-y-1">
-            <p className="font-display text-base font-semibold">
-              {succeededRenders.length} vídeo(s) prontos →{" "}
-              <span className="text-primary">
-                {totalPostsToCreate} publicação(ões) de {FORMAT_LABELS[format].title}
-              </span>
-            </p>
-            <p className="text-xs text-muted">
-              Ritmo: {slotsPerDay} publicação(ões) por dia ativo (~{estimatedDays} dia(s) de conteúdo programado automaticamente).
-            </p>
+            <label className="text-xs font-medium text-muted uppercase tracking-wider">3. Legenda do Post / Reel</label>
+            <textarea
+              rows={3}
+              value={captionTemplate}
+              onChange={(e) => setCaptionTemplate(e.target.value)}
+              placeholder="Escreva a legenda e as hashtags dos seus criativos..."
+              className="w-full rounded-xl border border-border bg-surface p-3 text-sm text-fg placeholder:text-muted focus:border-primary focus:outline-none"
+            />
           </div>
-          {canWrite && (
-            <Button
-              id="schedule-bulk-instagram"
-              size="lg"
-              disabled={busySchedule || succeededRenders.length === 0}
-              onClick={handleBulkSchedule}
-            >
-              {busySchedule ? <Spinner /> : null} Programar {totalPostsToCreate} {FORMAT_LABELS[format].title} em Massa
-            </Button>
-          )}
-        </div>
-      </Card>
 
-      {/* 5. Fila / Calendário de Publicações Agendadas */}
+          {/* 4. Botão Principal de Agendar */}
+          {canWrite && (
+            <button
+              id="schedule-bulk-instagram"
+              type="button"
+              disabled={busySchedule || succeededRenders.length === 0}
+              onClick={handleScheduleCreatives}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-5 font-display text-sm font-semibold text-white shadow-lg transition hover:opacity-95 disabled:opacity-50"
+            >
+              {busySchedule ? <Spinner /> : <InstagramIcon className="h-5 w-5" />}
+              {activeAccount
+                ? `Programar ${totalPostsToCreate} ${FORMAT_LABELS[format].title} em ${activeAccount.username ? `@${activeAccount.username}` : activeAccount.name}`
+                : "Conectar Instagram e Programar Criativos"}
+            </button>
+          )}
+        </Card>
+      </div>
+
+      {/* Lista de Criativos Agendados */}
       {initialSchedules.length > 0 && (
         <Card className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="font-display text-lg font-semibold">
-                Fila de Publicações Programadas ({initialSchedules.length})
+                Calendário de Criativos Agendados ({initialSchedules.length})
               </h3>
               <p className="text-xs text-muted">
-                Você pode ajustar o dia/hora de qualquer item individualmente, publicar agora ou cancelar.
+                Altere a data/hora de qualquer criativo ou clique em Publicar agora.
               </p>
             </div>
           </div>
 
-          <div className="max-h-[32rem] overflow-y-auto pr-1">
+          <div className="max-h-[28rem] overflow-y-auto pr-1">
             <ul className="divide-y divide-border">
               {initialSchedules.map((item) => {
                 const st = STATUS_BADGE[item.status] ?? { label: item.status, tone: "neutral" as const };
@@ -603,22 +643,14 @@ export function InstagramSchedulePanel({
                     <div className="min-w-[14rem] flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone={st.tone}>{st.label}</Badge>
-                        <Badge tone="neutral">{FORMAT_LABELS[item.format]?.title ?? item.format}</Badge>
+                        <Badge tone="neutral">{FORMAT_LABELS[item.format]?.badge ?? item.format}</Badge>
                         <span className="font-mono text-xs font-semibold">{item.codes.join(" + ")}</span>
-                        <span className="text-xs text-muted">→ {item.accountName}</span>
+                        <span className="text-xs text-muted">
+                          → {item.accountUsername ? `@${item.accountUsername}` : item.accountName}
+                        </span>
                       </div>
                       {item.caption && <p className="line-clamp-1 text-xs text-muted">{item.caption}</p>}
                       {item.errorPt && <p className="text-xs text-danger">{item.errorPt}</p>}
-                      {item.permalink && (
-                        <a
-                          href={item.permalink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-block text-xs text-primary underline"
-                        >
-                          Ver publicação no Instagram ↗
-                        </a>
-                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">

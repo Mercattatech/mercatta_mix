@@ -23,10 +23,121 @@ export interface InstagramAccountView {
 export interface UpsertInstagramAccountInput {
   organizationId: string;
   name: string;
-  igUserId: string;
-  accessToken: string;
+  igUserId?: string;
+  accessToken?: string;
   username?: string | null;
   verifyWithMeta?: boolean;
+}
+
+export interface InstagramOAuthConfig {
+  appId: string;
+  appSecret: string;
+}
+
+export async function getInstagramOAuthConfig(sql: Sql): Promise<InstagramOAuthConfig | null> {
+  const envId = process.env.META_APP_ID?.trim() || process.env.INSTAGRAM_APP_ID?.trim();
+  const envSecret = process.env.META_APP_SECRET?.trim() || process.env.INSTAGRAM_APP_SECRET?.trim();
+  if (envId && envSecret) return { appId: envId, appSecret: envSecret };
+
+  const r = await sql.query<{ value: { app_id?: string; app_secret?: string } }>(
+    "select value from platform_settings where key = 'instagram_oauth_config'",
+  );
+  const v = r.rows[0]?.value;
+  if (v?.app_id && v?.app_secret) {
+    return { appId: v.app_id, appSecret: v.app_secret };
+  }
+  return null;
+}
+
+export async function saveInstagramOAuthConfig(sql: Sql, input: { appId: string; appSecret: string }): Promise<void> {
+  await sql.query(
+    `insert into platform_settings (key, value)
+     values ('instagram_oauth_config', $1)
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    [JSON.stringify({ app_id: input.appId.trim(), app_secret: input.appSecret.trim() })],
+  );
+}
+
+export function buildInstagramOAuthUrl(config: InstagramOAuthConfig, redirectUri: string, state: string): string {
+  const params = new URLSearchParams({
+    client_id: config.appId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "instagram_business_basic,instagram_business_content_publish",
+    state,
+  });
+  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+}
+
+export async function exchangeInstagramOAuthCode(
+  sql: Sql,
+  opts: {
+    organizationId: string;
+    code: string;
+    redirectUri: string;
+    config: InstagramOAuthConfig;
+    encryptionKeyRaw?: string;
+  },
+): Promise<InstagramAccountView> {
+  // 1. Troca o código pelo short-lived token no endpoint oficial do Instagram Login for Business
+  const form = new URLSearchParams({
+    client_id: opts.config.appId,
+    client_secret: opts.config.appSecret,
+    grant_type: "authorization_code",
+    redirect_uri: opts.redirectUri,
+    code: opts.code,
+  });
+  const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
+  const tokenData = (await tokenRes.json().catch(() => ({}))) as {
+    access_token?: string;
+    user_id?: string | number;
+    error_message?: string;
+  };
+  if (!tokenRes.ok || !tokenData.access_token) {
+    throw new UserFacingError(tokenData.error_message ?? "Não foi possível concluir a autorização com o Instagram.");
+  }
+
+  let finalToken = tokenData.access_token;
+  // 2. Troca por token de longa duração (60 dias)
+  try {
+    const llUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(opts.config.appSecret)}&access_token=${encodeURIComponent(finalToken)}`;
+    const llRes = await fetch(llUrl);
+    const llData = (await llRes.json().catch(() => ({}))) as { access_token?: string };
+    if (llData.access_token) finalToken = llData.access_token;
+  } catch {
+    // mantém short-lived se falhar
+  }
+
+  // 3. Busca dados do perfil (@username, id, name)
+  const meUrl = `https://graph.instagram.com/v21.0/me?fields=id,user_id,username,name&access_token=${encodeURIComponent(finalToken)}`;
+  const meRes = await fetch(meUrl);
+  const meData = (await meRes.json().catch(() => ({}))) as {
+    id?: string;
+    user_id?: string;
+    username?: string;
+    name?: string;
+  };
+
+  const igUserId = String(meData.user_id || meData.id || tokenData.user_id || "");
+  const username = meData.username || "instagram";
+  const displayName = meData.name ? `${meData.name} (@${username})` : `@${username}`;
+
+  return upsertInstagramAccount(
+    sql,
+    {
+      organizationId: opts.organizationId,
+      name: displayName,
+      username,
+      igUserId,
+      accessToken: finalToken,
+      verifyWithMeta: false,
+    },
+    opts.encryptionKeyRaw,
+  );
 }
 
 export interface BulkScheduleInput {
@@ -175,24 +286,23 @@ export async function upsertInstagramAccount(
   input: UpsertInstagramAccountInput,
   encryptionKeyRaw?: string,
 ): Promise<InstagramAccountView> {
-  const name = input.name.trim();
-  const igUserId = input.igUserId.trim();
-  if (!name) throw new UserFacingError("Informe um nome para identificar a conta (ex.: @suaempresa).");
-  if (!igUserId) throw new UserFacingError("Informe o Instagram Business Account ID (IG User ID).");
+  const cleanHandle = (input.username || input.name || "instagram").trim().replace(/^@/, "");
+  const name = input.name.trim() || `@${cleanHandle}`;
+  const igUserId = input.igUserId?.trim() || `ig_${cleanHandle.toLowerCase().replace(/[^a-z0-9._]/g, "") || "business"}`;
+  const rawToken = input.accessToken?.trim() || "oauth_pending";
 
-  const encToken = encodeToken(input.accessToken, encryptionKeyRaw);
-  let username = input.username?.trim().replace(/^@/, "") || null;
-  let status: "active" | "error" = "active";
+  const encToken = encodeToken(rawToken, encryptionKeyRaw);
+  let username = cleanHandle || null;
+  const status: "active" | "error" = "active";
   let lastError: string | null = null;
   let lastVerifiedAt: Date | null = null;
 
-  if (input.verifyWithMeta !== false) {
-    const check = await verifyInstagramGraphCredentials(igUserId, input.accessToken);
+  if (input.verifyWithMeta !== false && input.accessToken?.trim() && input.igUserId?.trim()) {
+    const check = await verifyInstagramGraphCredentials(igUserId, rawToken);
     lastVerifiedAt = new Date();
     if (check.ok) {
       if (check.username) username = check.username;
     } else {
-      // Salva a conta mesmo se o token for de teste/ainda não publicado, mas registra o aviso
       lastError = check.error ?? null;
     }
   }
@@ -810,3 +920,4 @@ export async function executeInstagramPublish(
 
   return { igMediaId, permalink };
 }
+

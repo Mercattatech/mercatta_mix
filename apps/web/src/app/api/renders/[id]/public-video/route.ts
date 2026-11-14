@@ -32,3 +32,4 @@ export function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
     return NextResponse.redirect(new URL(await downloadUrl(row.r2_key, `${row.code}.mp4`), req.url), 302);
   });
 }
+
