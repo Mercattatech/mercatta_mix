@@ -389,7 +389,7 @@ export function InstagramSchedulePanel({
               href="/automations"
               className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-4 text-xs font-semibold text-white shadow transition hover:opacity-95"
             >
-              ⚡ Automações ManyChat (Comentário → Seguir → Direct)
+              ⚡ Automações Mix (Comentário → Seguir → Direct)
             </a>
             <button
               id="connect-instagram-btn"

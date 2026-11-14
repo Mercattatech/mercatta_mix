@@ -11,7 +11,7 @@ import { getDb } from "@/lib/db";
 import { AutomationsStudio } from "./automations-studio";
 
 export const metadata: Metadata = {
-  title: "Automações ManyChat — Comentários, Direct e Trava de Seguidor",
+  title: "Automações Mix — Comentários, Direct e Trava de Seguidor",
 };
 
 export default async function AutomationsPage() {
@@ -51,3 +51,4 @@ export default async function AutomationsPage() {
     </div>
   );
 }
+

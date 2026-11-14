@@ -442,7 +442,7 @@ export function AutomationsStudio({
               ⚡
             </span>
             <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
-              Mercatta ManyChat — Automações de Instagram
+              Automações Mix — Instagram
             </h1>
           </div>
           <p className="text-sm text-muted">
@@ -880,7 +880,7 @@ export function AutomationsStudio({
             onClick={handleSaveAutomation}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-6 font-display text-sm font-semibold text-white shadow-lg transition hover:opacity-95 disabled:opacity-50"
           >
-            {busySave ? <Spinner /> : "💾"} Salvar e Ativar Automação ManyChat
+            {busySave ? <Spinner /> : "💾"} Salvar e Ativar Automação Mix
           </button>
         </Card>
 
@@ -1122,3 +1122,4 @@ export function AutomationsStudio({
     </div>
   );
 }
+
