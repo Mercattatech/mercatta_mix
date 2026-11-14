@@ -106,3 +106,4 @@ create policy instagram_automation_sessions_write on public.instagram_automation
   using (public.can_write_org(organization_id)) with check (public.can_write_org(organization_id));
 
 grant select, insert, update, delete on public.instagram_automations, public.instagram_automation_sessions to app_user;
+
