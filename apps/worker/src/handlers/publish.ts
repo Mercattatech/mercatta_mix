@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { executeInstagramPublish, type JobContext, type PublishPayload } from "@mercatta/server";
 import { logger, type WorkerDeps } from "../deps";
 import { runTrackedJob } from "./lifecycle";
@@ -19,16 +21,20 @@ export async function publishToInstagram(deps: WorkerDeps, payload: PublishPaylo
         );
       },
     },
-    async ({ progress }) => {
+    async ({ tmpDir, progress }) => {
       await progress(15, "Enviando mídia para o Instagram Graph API");
-      const rawAppUrl = process.env.APP_URL || "http://localhost:3000";
-      const appUrl = rawAppUrl.includes("localhost") ? "https://9b0f52fcf4d3e4.app.lhr.life" : rawAppUrl;
+      const appUrl = process.env.APP_URL || "http://localhost:3000";
       const encryptionKeyRaw = process.env.SETTINGS_ENCRYPTION_KEY;
       const res = await executeInstagramPublish(deps.db, {
         organizationId: org,
         scheduleId: payload.scheduleId,
         appUrl,
         ...(encryptionKeyRaw ? { encryptionKeyRaw } : {}),
+        readVideoBuffer: async (renderId, r2Key) => {
+          const destPath = path.join(tmpDir, `${renderId}.mp4`);
+          await deps.store.download(r2Key, destPath);
+          return readFile(destPath);
+        },
       });
       await progress(100, "Publicado no Instagram");
       log("instagram.published", { scheduleId: payload.scheduleId, igMediaId: res.igMediaId, permalink: res.permalink });

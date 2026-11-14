@@ -850,6 +850,49 @@ async function createIgMediaContainer(
   return data.id;
 }
 
+async function createAndUploadResumableIgVideoContainer(
+  igUserId: string,
+  accessToken: string,
+  params: Record<string, string>,
+  videoBuffer: Buffer,
+): Promise<string> {
+  const body = new URLSearchParams({
+    ...params,
+    upload_type: "resumable",
+    access_token: accessToken,
+  });
+  const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(igUserId)}/media?fields=id,uri`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  const data = (await res.json().catch(() => ({}))) as { id?: string; uri?: string; error?: { message?: string } };
+  if (!res.ok || !data.id) {
+    throw new UserFacingError(data.error?.message ?? `Falha ao criar container resumable no Instagram Graph API (HTTP ${res.status}).`);
+  }
+  const uploadUri = data.uri || `https://rupload.facebook.com/ig-api-upload/v21.0/${data.id}`;
+  const upRes = await fetch(uploadUri, {
+    method: "POST",
+    headers: {
+      Authorization: `OAuth ${accessToken}`,
+      offset: "0",
+      file_size: String(videoBuffer.byteLength),
+    },
+    body: new Uint8Array(videoBuffer),
+  });
+  const upData = (await upRes.json().catch(() => ({}))) as {
+    success?: boolean;
+    debug_info?: { message?: string };
+    error?: { message?: string };
+  };
+  if (!upRes.ok || upData.success === false) {
+    throw new UserFacingError(
+      upData.error?.message ?? upData.debug_info?.message ?? `Falha no envio binário do vídeo para a Meta (HTTP ${upRes.status}).`,
+    );
+  }
+  return data.id;
+}
+
 async function publishIgMediaContainer(igUserId: string, accessToken: string, creationId: string): Promise<string> {
   const body = new URLSearchParams({ creation_id: creationId, access_token: accessToken });
   const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(igUserId)}/media_publish`, {
@@ -875,6 +918,7 @@ export async function executeInstagramPublish(
     appUrl: string;
     encryptionKeyRaw?: string;
     resolveVideoUrl?: (renderId: string, r2Key: string) => Promise<string>;
+    readVideoBuffer?: (renderId: string, r2Key: string) => Promise<Buffer>;
   },
 ): Promise<{ igMediaId: string; permalink: string | null }> {
   const row = (
@@ -918,11 +962,14 @@ export async function executeInstagramPublish(
   const keyByRender = new Map(assets.rows.map((a) => [a.render_id, a.r2_key]));
 
   const videoUrls: string[] = [];
+  const videoBuffers: Buffer[] = [];
   const baseAppUrl = opts.appUrl.replace(/\/$/, "");
   for (const renderId of row.render_ids) {
     const r2Key = keyByRender.get(renderId);
     if (!r2Key) throw new UserFacingError(`Arquivo de vídeo do render ${renderId} não encontrado.`);
-    if (opts.resolveVideoUrl) {
+    if (opts.readVideoBuffer) {
+      videoBuffers.push(await opts.readVideoBuffer(renderId, r2Key));
+    } else if (opts.resolveVideoUrl) {
       videoUrls.push(await opts.resolveVideoUrl(renderId, r2Key));
     } else {
       const sig = signPublicRenderToken(renderId, opts.encryptionKeyRaw ?? "");
@@ -932,14 +979,25 @@ export async function executeInstagramPublish(
 
   let parentContainerId: string;
 
-  if (row.format === "CAROUSEL" && videoUrls.length >= 2) {
+  if (row.format === "CAROUSEL" && row.render_ids.length >= 2) {
     const childIds: string[] = [];
-    for (const vUrl of videoUrls.slice(0, 10)) {
-      const childId = await createIgMediaContainer(igUserId, accessToken, {
-        media_type: "VIDEO",
-        video_url: vUrl,
-        is_carousel_item: "true",
-      });
+    const count = Math.min(row.render_ids.length, 10);
+    for (let i = 0; i < count; i++) {
+      const childId = opts.readVideoBuffer
+        ? await createAndUploadResumableIgVideoContainer(
+            igUserId,
+            accessToken,
+            {
+              media_type: "VIDEO",
+              is_carousel_item: "true",
+            },
+            videoBuffers[i]!,
+          )
+        : await createIgMediaContainer(igUserId, accessToken, {
+            media_type: "VIDEO",
+            video_url: videoUrls[i]!,
+            is_carousel_item: "true",
+          });
       childIds.push(childId);
     }
     for (const childId of childIds) {
@@ -951,18 +1009,40 @@ export async function executeInstagramPublish(
       caption: row.caption,
     });
   } else if (row.format === "POST") {
-    parentContainerId = await createIgMediaContainer(igUserId, accessToken, {
-      media_type: "VIDEO",
-      video_url: videoUrls[0]!,
-      caption: row.caption,
-    });
+    parentContainerId = opts.readVideoBuffer
+      ? await createAndUploadResumableIgVideoContainer(
+          igUserId,
+          accessToken,
+          {
+            media_type: "REELS",
+            caption: row.caption,
+            share_to_feed: "true",
+          },
+          videoBuffers[0]!,
+        )
+      : await createIgMediaContainer(igUserId, accessToken, {
+          media_type: "VIDEO",
+          video_url: videoUrls[0]!,
+          caption: row.caption,
+        });
   } else {
-    parentContainerId = await createIgMediaContainer(igUserId, accessToken, {
-      media_type: "REELS",
-      video_url: videoUrls[0]!,
-      caption: row.caption,
-      share_to_feed: row.share_to_feed ? "true" : "false",
-    });
+    parentContainerId = opts.readVideoBuffer
+      ? await createAndUploadResumableIgVideoContainer(
+          igUserId,
+          accessToken,
+          {
+            media_type: "REELS",
+            caption: row.caption,
+            share_to_feed: row.share_to_feed ? "true" : "false",
+          },
+          videoBuffers[0]!,
+        )
+      : await createIgMediaContainer(igUserId, accessToken, {
+          media_type: "REELS",
+          video_url: videoUrls[0]!,
+          caption: row.caption,
+          share_to_feed: row.share_to_feed ? "true" : "false",
+        });
   }
 
   await sql.query(
