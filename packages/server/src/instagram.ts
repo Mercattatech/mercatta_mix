@@ -74,27 +74,20 @@ export async function saveInstagramOAuthConfig(
 }
 
 export function buildInstagramOAuthUrl(config: InstagramOAuthConfig, redirectUri: string, state: string): string {
-  if (config.configId) {
-    const params = new URLSearchParams({
-      client_id: config.appId,
-      config_id: config.configId,
-      display: "popup",
-      override_default_response_type: "true",
-      redirect_uri: redirectUri,
-      response_type: "code",
-      state,
-      prompt: "login",
-    });
-    return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
-  }
   const params = new URLSearchParams({
     client_id: config.appId,
+    display: "popup",
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "instagram_business_basic,instagram_business_content_publish",
+    scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management",
     state,
   });
-  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+  if (config.configId && config.configId !== DEFAULT_META_CONFIG_ID) {
+    params.set("config_id", config.configId);
+    params.set("override_default_response_type", "true");
+    params.delete("scope");
+  }
+  return `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
 }
 
 export async function exchangeInstagramOAuthCode(
@@ -125,7 +118,7 @@ export async function exchangeInstagramOAuthCode(
 
     const userToken = tokenData.access_token;
     const pagesRes = await fetch(
-      `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name}&access_token=${encodeURIComponent(userToken)}`,
+      `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name}&limit=100&access_token=${encodeURIComponent(userToken)}`,
     );
     const pagesData = (await pagesRes.json().catch(() => ({}))) as {
       data?: Array<{
@@ -136,29 +129,34 @@ export async function exchangeInstagramOAuthCode(
       }>;
     };
 
-    const pageWithIg = pagesData.data?.find((p) => p.instagram_business_account?.id);
-    if (!pageWithIg || !pageWithIg.instagram_business_account) {
+    const pagesWithIg = (pagesData.data ?? []).filter((p) => p.instagram_business_account?.id);
+    if (pagesWithIg.length === 0) {
       throw new UserFacingError(
         "Nenhuma conta profissional do Instagram vinculada a uma Página do Facebook foi retornada na autorização.",
       );
     }
 
-    const ig = pageWithIg.instagram_business_account;
-    const username = ig.username || pageWithIg.name;
-    const displayName = ig.name ? `${ig.name} (@${username})` : `@${username}`;
+    let firstSaved: InstagramAccountView | null = null;
+    for (const page of pagesWithIg) {
+      const ig = page.instagram_business_account!;
+      const username = ig.username || page.name;
+      const displayName = `@${username}`;
+      const saved = await upsertInstagramAccount(
+        sql,
+        {
+          organizationId: opts.organizationId,
+          name: displayName,
+          username,
+          igUserId: ig.id,
+          accessToken: page.access_token || userToken,
+          verifyWithMeta: false,
+        },
+        opts.encryptionKeyRaw,
+      );
+      if (!firstSaved) firstSaved = saved;
+    }
 
-    return upsertInstagramAccount(
-      sql,
-      {
-        organizationId: opts.organizationId,
-        name: displayName,
-        username,
-        igUserId: ig.id,
-        accessToken: userToken,
-        verifyWithMeta: false,
-      },
-      opts.encryptionKeyRaw,
-    );
+    return firstSaved!;
   }
 
   // Fallback: Instagram Login direto
