@@ -21,7 +21,7 @@ export async function publishToInstagram(deps: WorkerDeps, payload: PublishPaylo
         );
       },
     },
-    async ({ tmpDir, progress }) => {
+    async ({ workDir, progress }) => {
       await progress(15, "Enviando mídia para o Instagram Graph API");
       const appUrl = process.env.APP_URL || "http://localhost:3000";
       const encryptionKeyRaw = process.env.SETTINGS_ENCRYPTION_KEY;
@@ -31,7 +31,7 @@ export async function publishToInstagram(deps: WorkerDeps, payload: PublishPaylo
         appUrl,
         ...(encryptionKeyRaw ? { encryptionKeyRaw } : {}),
         readVideoBuffer: async (renderId, r2Key) => {
-          const destPath = path.join(tmpDir, `${renderId}.mp4`);
+          const destPath = path.join(workDir, `${renderId}.mp4`);
           await deps.store.download(r2Key, destPath);
           return readFile(destPath);
         },

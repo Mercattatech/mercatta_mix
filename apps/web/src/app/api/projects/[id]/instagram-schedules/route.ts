@@ -107,3 +107,30 @@ export function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   });
 }
 
+const deleteBody = z.object({
+  mode: z.enum(["failed_or_canceled", "all_pending"]).default("failed_or_canceled"),
+});
+
+export function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  return handle(async () => {
+    const user = await requireApiUser();
+    const { id: projectId } = await ctx.params;
+    const input = deleteBody.parse(await req.json().catch(() => ({})));
+    const { organizationId } = await projectAccess(user.id, projectId, "write");
+    const db = getDb();
+    const statuses =
+      input.mode === "all_pending"
+        ? ["scheduled", "failed", "canceled"]
+        : ["failed", "canceled"];
+    const r = await db.query<{ id: string }>(
+      `delete from social_schedules
+        where organization_id = $1
+          and project_id = $2
+          and status = any($3::text[])
+        returning id`,
+      [organizationId, projectId, statuses],
+    );
+    return { deleted: r.rows.length };
+  });
+}
+

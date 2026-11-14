@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { InstagramAccountView, InstagramFormat, SocialScheduleView } from "@mercatta/server";
 import { Alert, Badge, Button, Card, Input, Spinner } from "@/components/ui";
@@ -31,7 +31,7 @@ const FORMAT_LABELS: Record<InstagramFormat, { title: string; badge: string; des
   CAROUSEL: {
     title: "Carrossel",
     badge: "🗂️ Carrossel",
-    desc: "Agrupa múltiplos criativos num post deslizável",
+    desc: "Agrupa de 2 a 10 vídeos num único post deslizável",
   },
 };
 
@@ -40,8 +40,8 @@ const STATUS_BADGE: Record<
   { label: string; tone: "neutral" | "primary" | "success" | "warn" | "danger" }
 > = {
   scheduled: { label: "Agendado", tone: "primary" },
-  publishing: { label: "Publicando…", tone: "warn" },
-  published: { label: "Publicado", tone: "success" },
+  publishing: { label: "Publicando no Instagram…", tone: "warn" },
+  published: { label: "Publicado ✓", tone: "success" },
   failed: { label: "Falhou", tone: "danger" },
   canceled: { label: "Cancelado", tone: "neutral" },
 };
@@ -49,6 +49,11 @@ const STATUS_BADGE: Record<
 function todayISO(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function nowTimeHHMM(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
 function toDatetimeLocalValue(iso: string): string {
@@ -84,7 +89,13 @@ export function InstagramSchedulePanel({
   const router = useRouter();
   const succeededRenders = useMemo(() => renders.filter((r) => r.status === "succeeded"), [renders]);
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(initialAccounts[0]?.id ?? "");
+  const defaultAccount = useMemo(
+    () => initialAccounts.find((a) => a.username === "grupomercatta") ?? initialAccounts[0] ?? null,
+    [initialAccounts],
+  );
+
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(defaultAccount?.id ?? "");
+  const [accountSearch, setAccountSearch] = useState<string>("");
   const [selectedRenderIds, setSelectedRenderIds] = useState<string[]>(() =>
     renders.filter((r) => r.status === "succeeded").map((r) => r.id),
   );
@@ -93,7 +104,7 @@ export function InstagramSchedulePanel({
   // Formato e agendamento
   const [format, setFormat] = useState<InstagramFormat>("REELS");
   const [carouselSize, setCarouselSize] = useState<number>(3);
-  const [planType, setPlanType] = useState<"bulk_slots" | "single_datetime">("bulk_slots");
+  const [planType, setPlanType] = useState<"bulk_slots" | "single_datetime" | "publish_now">("bulk_slots");
   const [singleDate, setSingleDate] = useState<string>(todayISO());
   const [singleTime, setSingleTime] = useState<string>("12:00");
 
@@ -105,24 +116,62 @@ export function InstagramSchedulePanel({
     `${projectName}\n\n#reels #instagram #conteudodigital`,
   );
 
+  // Filtros do calendário
+  const [calendarStatusFilter, setCalendarStatusFilter] = useState<
+    "all" | "scheduled" | "publishing" | "published" | "failed"
+  >("all");
+  const [calendarAccountFilter, setCalendarAccountFilter] = useState<string>("all");
+
   const [busySchedule, setBusySchedule] = useState(false);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+  const [busyClear, setBusyClear] = useState(false);
   const [editingDateById, setEditingDateById] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const activeAccount = useMemo(
-    () => initialAccounts.find((a) => a.id === selectedAccountId) ?? initialAccounts[0] ?? null,
-    [initialAccounts, selectedAccountId],
+    () => initialAccounts.find((a) => a.id === selectedAccountId) ?? defaultAccount,
+    [initialAccounts, selectedAccountId, defaultAccount],
   );
 
-  // Mapa de agendamentos existentes por renderId para mostrar o selo direto no card do criativo
+  const filteredAccounts = useMemo(() => {
+    const q = accountSearch.trim().toLowerCase();
+    if (!q) return initialAccounts;
+    return initialAccounts.filter(
+      (a) => (a.username?.toLowerCase().includes(q) ?? false) || a.name.toLowerCase().includes(q),
+    );
+  }, [initialAccounts, accountSearch]);
+
+  // Atualiza a tela automaticamente enquanto houver algum vídeo sendo publicado ("publishing")
+  const hasPublishing = useMemo(
+    () => initialSchedules.some((s) => s.status === "publishing"),
+    [initialSchedules],
+  );
+  useEffect(() => {
+    if (!hasPublishing) return;
+    const t = setInterval(() => {
+      router.refresh();
+    }, 4000);
+    return () => clearInterval(t);
+  }, [hasPublishing, router]);
+
+  // Mapa de agendamentos existentes por renderId (priorizando published > publishing > scheduled)
   const scheduleByRenderId = useMemo(() => {
     const map = new Map<string, SocialScheduleView>();
+    const priority: Record<SocialScheduleView["status"], number> = {
+      published: 4,
+      publishing: 3,
+      scheduled: 2,
+      failed: 1,
+      canceled: 0,
+    };
     for (const s of initialSchedules) {
       if (s.status === "canceled") continue;
       for (const rId of s.renderIds) {
-        map.set(rId, s);
+        const cur = map.get(rId);
+        if (!cur || priority[s.status] >= priority[cur.status]) {
+          map.set(rId, s);
+        }
       }
     }
     return map;
@@ -130,8 +179,7 @@ export function InstagramSchedulePanel({
 
   const effectiveRenderIds = useMemo(() => {
     const valid = new Set(succeededRenders.map((r) => r.id));
-    const filtered = selectedRenderIds.filter((id) => valid.has(id));
-    return filtered.length > 0 ? filtered : succeededRenders.map((r) => r.id);
+    return selectedRenderIds.filter((id) => valid.has(id));
   }, [selectedRenderIds, succeededRenders]);
 
   const totalPostsToCreate = useMemo(() => {
@@ -144,6 +192,31 @@ export function InstagramSchedulePanel({
     const rem = n % size;
     return rem === 1 && size < 10 ? chunks - 1 : chunks;
   }, [effectiveRenderIds.length, format, carouselSize]);
+
+  const estimatedDays = useMemo(() => {
+    if (planType !== "bulk_slots" || totalPostsToCreate === 0) return 1;
+    const perDay = Math.max(1, timeSlots.length);
+    return Math.ceil(totalPostsToCreate / perDay);
+  }, [planType, totalPostsToCreate, timeSlots.length]);
+
+  const statusCounts = useMemo(() => {
+    const counts = { all: 0, scheduled: 0, publishing: 0, published: 0, failed: 0 };
+    for (const s of initialSchedules) {
+      if (s.status === "canceled") continue;
+      counts.all++;
+      if (s.status in counts) counts[s.status as keyof typeof counts]++;
+    }
+    return counts;
+  }, [initialSchedules]);
+
+  const visibleSchedules = useMemo(() => {
+    return initialSchedules.filter((s) => {
+      if (s.status === "canceled") return false;
+      if (calendarStatusFilter !== "all" && s.status !== calendarStatusFilter) return false;
+      if (calendarAccountFilter !== "all" && s.instagramAccountId !== calendarAccountFilter) return false;
+      return true;
+    });
+  }, [initialSchedules, calendarStatusFilter, calendarAccountFilter]);
 
   function toggleCreative(id: string) {
     setSelectedRenderIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -176,13 +249,15 @@ export function InstagramSchedulePanel({
       return;
     }
     if (effectiveRenderIds.length === 0) {
-      setError("Selecione pelo menos 1 criativo pronto para programar.");
+      setError("Selecione pelo menos 1 criativo na grade à esquerda para programar.");
       return;
     }
     setBusySchedule(true);
     setError(null);
     setSuccessMsg(null);
     try {
+      const isNow = planType === "publish_now";
+      const isSingle = planType === "single_datetime" || isNow;
       const res = await fetch(`/api/projects/${projectId}/instagram-schedules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -191,23 +266,42 @@ export function InstagramSchedulePanel({
           format,
           carouselSize: format === "CAROUSEL" ? carouselSize : undefined,
           renderIds: effectiveRenderIds,
-          startDate: planType === "single_datetime" ? singleDate : startDate,
-          daysOfWeek: planType === "single_datetime" ? [0, 1, 2, 3, 4, 5, 6] : daysOfWeek,
+          startDate: isNow ? todayISO() : isSingle ? singleDate : startDate,
+          daysOfWeek: isSingle ? [0, 1, 2, 3, 4, 5, 6] : daysOfWeek,
           scheduleMode: "fixed_times",
-          timesOfDay: planType === "single_datetime" ? [singleTime] : timeSlots,
+          timesOfDay: isNow ? [nowTimeHHMM()] : isSingle ? [singleTime] : timeSlots,
           timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
           captionTemplate,
           shareToFeed: true,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { count?: number; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        count?: number;
+        schedules?: SocialScheduleView[];
+        error?: string;
+      };
       if (!res.ok) {
         setError(data.error ?? "Não foi possível agendar os criativos.");
         return;
       }
-      setSuccessMsg(
-        `${data.count ?? totalPostsToCreate} publicação(ões) de ${FORMAT_LABELS[format].title} programada(s) para ${activeAccount.name}!`,
-      );
+
+      if (isNow && data.schedules && data.schedules.length > 0) {
+        // Dispara publicação imediata no primeiro lote
+        for (const sched of data.schedules.slice(0, 3)) {
+          await fetch(`/api/projects/${projectId}/instagram-schedules`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scheduleId: sched.id, action: "publish_now" }),
+          });
+        }
+        setSuccessMsg(
+          `Enviando agora para @${activeAccount.username || activeAccount.name}! Acompanhe o status "Publicando no Instagram…" abaixo.`,
+        );
+      } else {
+        setSuccessMsg(
+          `${data.count ?? totalPostsToCreate} publicação(ões) de ${FORMAT_LABELS[format].title} programada(s) em @${activeAccount.username || activeAccount.name}!`,
+        );
+      }
       router.refresh();
     } catch {
       setError("Sem conexão ao programar os criativos.");
@@ -222,6 +316,7 @@ export function InstagramSchedulePanel({
   ) {
     setActionBusyId(scheduleId);
     setError(null);
+    setSuccessMsg(null);
     try {
       const res = await fetch(`/api/projects/${projectId}/instagram-schedules`, {
         method: "PATCH",
@@ -233,73 +328,102 @@ export function InstagramSchedulePanel({
         setError(data.error ?? "Não foi possível atualizar o agendamento.");
         return;
       }
+      if (payload.action === "publish_now") {
+        setSuccessMsg("Vídeo enviado para a fila imediata do Instagram! Ele mudará para 'Publicado ✓' em ~15 segundos.");
+      }
       router.refresh();
     } finally {
       setActionBusyId(null);
     }
   }
 
+  async function handleClearSchedules(mode: "failed_or_canceled" | "all_pending") {
+    setBusyClear(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/instagram-schedules`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (res.ok) {
+        setSuccessMsg(
+          mode === "all_pending"
+            ? "Fila de agendamentos pendentes limpa com sucesso."
+            : "Registros com falha/cancelados removidos.",
+        );
+        router.refresh();
+      }
+    } finally {
+      setBusyClear(false);
+    }
+  }
+
   return (
     <section className="space-y-6" aria-labelledby="step-instagram">
-      {/* Cabeçalho + Botão de Conexão 1-Clique com o Instagram */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-surface p-5">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 via-pink-500 to-purple-600 text-white">
-              <InstagramIcon className="h-4 w-4" />
-            </span>
-            <h2 id="step-instagram" className="font-display text-2xl font-semibold">
-              5. Conectar Instagram e Programar Criativos
-            </h2>
-          </div>
-          <p className="text-sm text-muted">
-            Conecte seu perfil com um clique, selecione os criativos abaixo e programe como <strong>Reels</strong>, <strong>Post</strong> ou <strong>Carrossel</strong>.
-          </p>
-        </div>
-
-        {activeAccount ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              <div className="text-left leading-tight">
-                <p className="text-xs font-semibold text-fg">
-                  {activeAccount.username ? `@${activeAccount.username}` : activeAccount.name}
-                </p>
-                <p className="text-[11px] text-muted">Instagram conectado</p>
-              </div>
-              {initialAccounts.length > 1 && (
-                <select
-                  value={activeAccount.id}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="ml-2 rounded-lg border border-border bg-surface px-2 py-1 text-xs text-fg"
-                >
-                  {initialAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.username ? `@${acc.username}` : acc.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+      {/* Cabeçalho + Resumo de Como Funciona */}
+      <div className="rounded-2xl border border-border bg-surface p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 via-pink-500 to-purple-600 text-white">
+                <InstagramIcon className="h-4 w-4" />
+              </span>
+              <h2 id="step-instagram" className="font-display text-2xl font-semibold">
+                5. Publicar e Agendar no Instagram
+              </h2>
             </div>
+            <p className="text-sm text-muted">
+              Publique seus vídeos prontos diretamente como <strong>Reels</strong>, <strong>Post</strong> ou <strong>Carrossel</strong> nos seus perfis oficiais conectados.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {initialAccounts.length > 0 && (
+              <span className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                {initialAccounts.length} perfis do Instagram conectados
+              </span>
+            )}
             <button
+              id="connect-instagram-btn"
               type="button"
               onClick={connectInstagramRedirect}
-              className="rounded-xl border border-border bg-surface-2 px-3.5 py-2 text-xs font-medium text-fg transition hover:bg-surface"
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 text-xs font-semibold text-fg transition hover:bg-surface"
             >
-              + Outra conta
+              <InstagramIcon className="h-4 w-4" />
+              {initialAccounts.length > 0 ? "Reconectar / + Contas Meta" : "Conectar com o Instagram"}
             </button>
           </div>
-        ) : (
-          <button
-            id="connect-instagram-btn"
-            type="button"
-            onClick={connectInstagramRedirect}
-            className="inline-flex h-12 items-center gap-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-6 font-display text-sm font-semibold text-white shadow-lg transition hover:opacity-95"
-          >
-            <InstagramIcon className="h-5 w-5" />
-            Conectar com o Instagram
-          </button>
-        )}
+        </div>
+
+        {/* Guia Visual Rápido de 4 Passos */}
+        <div className="grid gap-2.5 pt-1 sm:grid-cols-4">
+          <div className="rounded-xl border border-border bg-surface-2/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Passo 1 · Perfil</p>
+            <p className="mt-0.5 text-xs text-fg">
+              Escolha em qual conta (ex.: <strong>@{activeAccount?.username || "grupomercatta"}</strong>) você quer postar.
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface-2/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Passo 2 · Criativos</p>
+            <p className="mt-0.5 text-xs text-fg">
+              Marque na grade à esquerda os vídeos que deseja publicar (1 vídeo ou o lote inteiro).
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface-2/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Passo 3 · Quando Postar</p>
+            <p className="mt-0.5 text-xs text-fg">
+              Escolha <strong>Grade Automática</strong> (ex.: 3x ao dia), <strong>Horário Único</strong> ou <strong>Publicar Agora</strong>.
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-surface-2/40 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Passo 4 · Acompanhar</p>
+            <p className="mt-0.5 text-xs text-fg">
+              No calendário abaixo, veja o status ao vivo e clique em <strong>Ver no Instagram ↗</strong>.
+            </p>
+          </div>
+        </div>
       </div>
 
       {error && <Alert>{error}</Alert>}
@@ -315,23 +439,43 @@ export function InstagramSchedulePanel({
                 Seus Criativos Prontos ({effectiveRenderIds.length} de {succeededRenders.length} selecionados)
               </h3>
               <p className="text-xs text-muted">
-                Clique nos criativos que deseja programar ou selecione todos o lote.
+                Clique em qualquer criativo para marcar/desmarcar ou clique em <strong>▶ Assistir</strong> para visualizar.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setSelectedRenderIds(succeededRenders.map((r) => r.id))}
                 className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium hover:bg-surface"
               >
-                Selecionar todos ({succeededRenders.length})
+                Todos ({succeededRenders.length})
               </button>
               <button
                 type="button"
-                onClick={() => setSelectedRenderIds(succeededRenders.slice(0, 10).map((r) => r.id))}
+                onClick={() =>
+                  setSelectedRenderIds(
+                    succeededRenders.filter((r) => !scheduleByRenderId.has(r.id)).map((r) => r.id),
+                  )
+                }
                 className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium hover:bg-surface"
               >
-                Top 10
+                Só não agendados
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedRenderIds(succeededRenders[0] ? [succeededRenders[0].id] : [])
+                }
+                className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium hover:bg-surface"
+              >
+                Apenas 1º vídeo
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRenderIds([])}
+                className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-muted hover:bg-surface hover:text-fg"
+              >
+                Limpar
               </button>
             </div>
           </div>
@@ -362,7 +506,7 @@ export function InstagramSchedulePanel({
           )}
 
           {succeededRenders.length > 0 ? (
-            <div className="grid max-h-[28rem] grid-cols-2 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-3">
+            <div className="grid max-h-[32rem] grid-cols-2 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-3">
               {succeededRenders.map((r, idx) => {
                 const isSelected = effectiveRenderIds.includes(r.id);
                 const existingSched = scheduleByRenderId.get(r.id);
@@ -373,7 +517,7 @@ export function InstagramSchedulePanel({
                     className={`cursor-pointer rounded-xl border p-3 transition ${
                       isSelected
                         ? "border-primary bg-primary/10 ring-1 ring-primary"
-                        : "border-border bg-surface-2/40 opacity-70 hover:opacity-100"
+                        : "border-border bg-surface-2/40 opacity-75 hover:opacity-100"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1">
@@ -389,10 +533,37 @@ export function InstagramSchedulePanel({
                       <span className="text-[11px] text-muted">#{idx + 1}</span>
                     </div>
 
-                    <p className="mt-1 text-xs text-muted">{formatDuration(r.duration_ms)}</p>
+                    <div className="mt-1 flex items-center justify-between text-xs text-muted">
+                      <span>{formatDuration(r.duration_ms)}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewRenderId(r.id);
+                        }}
+                        className="text-[11px] font-medium text-primary hover:underline"
+                      >
+                        ▶ Assistir
+                      </button>
+                    </div>
 
-                    {existingSched ? (
-                      <div className="mt-2 rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-300">
+                    {existingSched?.status === "published" ? (
+                      <div className="mt-2 flex items-center justify-between rounded-lg bg-emerald-500/20 px-2 py-1 text-[11px] font-semibold text-emerald-300">
+                        <span>✓ Publicado</span>
+                        {existingSched.permalink && (
+                          <a
+                            href={existingSched.permalink}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="underline hover:text-white"
+                          >
+                            Abrir ↗
+                          </a>
+                        )}
+                      </div>
+                    ) : existingSched ? (
+                      <div className="mt-2 rounded-lg bg-primary/15 px-2 py-1 text-[11px] font-medium text-fg">
                         📅{" "}
                         {new Date(existingSched.scheduledAt).toLocaleString("pt-BR", {
                           day: "2-digit",
@@ -402,19 +573,7 @@ export function InstagramSchedulePanel({
                         })}
                       </div>
                     ) : (
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-[11px] text-muted">Pronto p/ postar</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPreviewRenderId(r.id);
-                          }}
-                          className="text-[11px] font-medium text-primary hover:underline"
-                        >
-                          ▶ Ver
-                        </button>
-                      </div>
+                      <div className="mt-2 text-[11px] text-muted">Disponível para agendar</div>
                     )}
                   </div>
                 );
@@ -427,16 +586,45 @@ export function InstagramSchedulePanel({
           )}
         </Card>
 
-        {/* Coluna Direita (5 cols): Configuração Visual de Formato, Data e Hora */}
+        {/* Coluna Direita (5 cols): Configuração Passo a Passo */}
         <Card className="space-y-5 lg:col-span-5">
           <div>
             <h3 className="font-display text-base font-semibold">Configurar Publicação</h3>
-            <p className="text-xs text-muted">Escolha onde os criativos selecionados vão entrar e os horários.</p>
+            <p className="text-xs text-muted">
+              Defina o perfil de destino, o formato e quando os {effectiveRenderIds.length} criativos selecionados serão postados.
+            </p>
           </div>
 
-          {/* 1. Formato: Reels, Post ou Carrossel */}
+          {/* 1. Perfil do Instagram */}
+          <div className="space-y-2 rounded-xl border border-border bg-surface-2/40 p-3">
+            <label className="text-xs font-semibold text-fg uppercase tracking-wider">
+              1. Perfil do Instagram de Destino
+            </label>
+            {initialAccounts.length > 5 && (
+              <Input
+                type="search"
+                value={accountSearch}
+                onChange={(e) => setAccountSearch(e.target.value)}
+                placeholder="Buscar conta (ex.: grupomercatta, m4, voesoftware)..."
+                className="h-8 text-xs"
+              />
+            )}
+            <select
+              value={activeAccount?.id ?? ""}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg"
+            >
+              {filteredAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.username ? `@${acc.username}` : acc.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 2. Formato: Reels, Post ou Carrossel */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">1. Formato no Instagram</label>
+            <label className="text-xs font-semibold text-fg uppercase tracking-wider">2. Formato no Instagram</label>
             <div className="grid grid-cols-3 gap-2">
               {(["REELS", "POST", "CAROUSEL"] as const).map((fmt) => {
                 const active = format === fmt;
@@ -462,7 +650,7 @@ export function InstagramSchedulePanel({
           {format === "CAROUSEL" && (
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">Criativos por Carrossel:</span>
+                <span className="text-xs font-medium">Vídeos por Carrossel:</span>
                 <div className="flex gap-1">
                   {[2, 3, 4, 5, 6, 10].map((n) => (
                     <button
@@ -483,43 +671,54 @@ export function InstagramSchedulePanel({
             </div>
           )}
 
-          {/* 2. Modo de Programação: Grade em Massa vs Data/Hora Única */}
+          {/* 3. Quando Publicar */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">2. Dia e Horário</label>
-            <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs font-semibold text-fg uppercase tracking-wider">3. Quando Publicar</label>
+            <div className="grid grid-cols-3 gap-1.5">
               <button
                 type="button"
                 onClick={() => setPlanType("bulk_slots")}
-                className={`rounded-xl border p-2.5 text-xs font-medium transition ${
+                className={`rounded-xl border p-2 text-xs font-medium transition ${
                   planType === "bulk_slots"
-                    ? "border-primary bg-primary/15 text-fg"
+                    ? "border-primary bg-primary/15 text-fg ring-1 ring-primary"
                     : "border-border bg-surface-2/40 text-muted"
                 }`}
               >
-                📅 Distribuir por dias e horários
+                📅 Grade de Horários
               </button>
               <button
                 type="button"
                 onClick={() => setPlanType("single_datetime")}
-                className={`rounded-xl border p-2.5 text-xs font-medium transition ${
+                className={`rounded-xl border p-2 text-xs font-medium transition ${
                   planType === "single_datetime"
-                    ? "border-primary bg-primary/15 text-fg"
+                    ? "border-primary bg-primary/15 text-fg ring-1 ring-primary"
                     : "border-border bg-surface-2/40 text-muted"
                 }`}
               >
-                ⏰ Data e hora específica
+                ⏰ Data / Hora Fixa
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanType("publish_now")}
+                className={`rounded-xl border p-2 text-xs font-medium transition ${
+                  planType === "publish_now"
+                    ? "border-emerald-500 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500"
+                    : "border-border bg-surface-2/40 text-muted"
+                }`}
+              >
+                🚀 Publicar Agora
               </button>
             </div>
 
             {planType === "bulk_slots" ? (
               <div className="space-y-3 rounded-xl border border-border bg-surface-2/30 p-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted">Começar no dia</label>
+                  <label className="text-xs text-muted">Data de início</label>
                   <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-muted">Dias da semana</label>
+                  <label className="text-xs text-muted">Dias da semana permitidos</label>
                   <div className="flex flex-wrap gap-1">
                     {WEEKDAYS.map((w) => {
                       const on = daysOfWeek.includes(w.day);
@@ -542,7 +741,7 @@ export function InstagramSchedulePanel({
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs text-muted">Horários de postagem no dia</label>
+                  <label className="text-xs text-muted">Horários do dia ({timeSlots.length} postagens/dia)</label>
                   <div className="flex flex-wrap gap-1.5">
                     {timeSlots.map((slot) => (
                       <span
@@ -573,8 +772,13 @@ export function InstagramSchedulePanel({
                     </Button>
                   </div>
                 </div>
+
+                <div className="rounded-lg bg-primary/10 px-3 py-2 text-xs text-fg">
+                  💡 <strong>Resumo da grade:</strong> {totalPostsToCreate} {FORMAT_LABELS[format].title} distribuídos em{" "}
+                  <strong>{timeSlots.length} horário(s)/dia</strong> (~{estimatedDays} dia(s) de conteúdo no ar).
+                </div>
               </div>
-            ) : (
+            ) : planType === "single_datetime" ? (
               <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-surface-2/30 p-3">
                 <div className="space-y-1">
                   <label className="text-xs text-muted">Dia</label>
@@ -585,12 +789,17 @@ export function InstagramSchedulePanel({
                   <Input type="time" value={singleTime} onChange={(e) => setSingleTime(e.target.value)} />
                 </div>
               </div>
+            ) : (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+                🚀 <strong>Publicação imediata:</strong> O(s) criativo(s) selecionado(s) serão enviados agora mesmo diretamente para{" "}
+                <strong>@{activeAccount?.username || activeAccount?.name}</strong>.
+              </div>
             )}
           </div>
 
-          {/* 3. Legenda */}
+          {/* 4. Legenda */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted uppercase tracking-wider">3. Legenda do Post / Reel</label>
+            <label className="text-xs font-semibold text-fg uppercase tracking-wider">4. Legenda do Post / Reel</label>
             <textarea
               rows={3}
               value={captionTemplate}
@@ -600,44 +809,110 @@ export function InstagramSchedulePanel({
             />
           </div>
 
-          {/* 4. Botão Principal de Agendar */}
+          {/* 5. Botão Principal de Agendar / Publicar */}
           {canWrite && (
             <button
               id="schedule-bulk-instagram"
               type="button"
-              disabled={busySchedule || succeededRenders.length === 0}
+              disabled={busySchedule || effectiveRenderIds.length === 0}
               onClick={handleScheduleCreatives}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-5 font-display text-sm font-semibold text-white shadow-lg transition hover:opacity-95 disabled:opacity-50"
             >
               {busySchedule ? <Spinner /> : <InstagramIcon className="h-5 w-5" />}
               {activeAccount
-                ? `Programar ${totalPostsToCreate} ${FORMAT_LABELS[format].title} em ${activeAccount.username ? `@${activeAccount.username}` : activeAccount.name}`
+                ? planType === "publish_now"
+                  ? `Publicar Agora (${totalPostsToCreate}) em @${activeAccount.username || activeAccount.name}`
+                  : `Programar ${totalPostsToCreate} ${FORMAT_LABELS[format].title} em @${activeAccount.username || activeAccount.name}`
                 : "Conectar Instagram e Programar Criativos"}
             </button>
           )}
         </Card>
       </div>
 
-      {/* Lista de Criativos Agendados */}
-      {initialSchedules.length > 0 && (
+      {/* Lista de Criativos Agendados e Publicados */}
+      {statusCounts.all > 0 && (
         <Card className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
             <div>
               <h3 className="font-display text-lg font-semibold">
-                Calendário de Criativos Agendados ({initialSchedules.length})
+                Fila e Calendário de Publicações ({visibleSchedules.length})
               </h3>
               <p className="text-xs text-muted">
-                Altere a data/hora de qualquer criativo ou clique em Publicar agora.
+                Clique em <strong>Publicar agora</strong> em qualquer vídeo para postar imediatamente ou altere a data/hora.
               </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {statusCounts.failed > 0 && canWrite && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busyClear}
+                  onClick={() => handleClearSchedules("failed_or_canceled")}
+                >
+                  Limpar falhas ({statusCounts.failed})
+                </Button>
+              )}
+              {statusCounts.scheduled > 0 && canWrite && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busyClear}
+                  onClick={() => handleClearSchedules("all_pending")}
+                >
+                  Limpar fila agendada
+                </Button>
+              )}
             </div>
           </div>
 
-          <div className="max-h-[28rem] overflow-y-auto pr-1">
+          {/* Filtros de Status e Conta */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: "all", label: `Todos (${statusCounts.all})` },
+                  { id: "published", label: `Publicados ✓ (${statusCounts.published})` },
+                  { id: "publishing", label: `Publicando (${statusCounts.publishing})` },
+                  { id: "scheduled", label: `Agendados (${statusCounts.scheduled})` },
+                  ...(statusCounts.failed > 0 ? [{ id: "failed", label: `Com erro (${statusCounts.failed})` }] : []),
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setCalendarStatusFilter(tab.id as typeof calendarStatusFilter)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    calendarStatusFilter === tab.id
+                      ? "border-primary bg-primary text-white"
+                      : "border-border bg-surface-2/50 text-muted hover:text-fg"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <select
+              value={calendarAccountFilter}
+              onChange={(e) => setCalendarAccountFilter(e.target.value)}
+              className="h-8 rounded-lg border border-border bg-surface px-2.5 text-xs text-fg"
+            >
+              <option value="all">Todas as contas</option>
+              {initialAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  @{acc.username || acc.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="max-h-[30rem] overflow-y-auto pr-1">
             <ul className="divide-y divide-border">
-              {initialSchedules.map((item) => {
+              {visibleSchedules.map((item) => {
                 const st = STATUS_BADGE[item.status] ?? { label: item.status, tone: "neutral" as const };
                 const localVal = editingDateById[item.id] ?? toDatetimeLocalValue(item.scheduledAt);
-                const busy = actionBusyId === item.id;
+                const busy = actionBusyId === item.id || item.status === "publishing";
                 return (
                   <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                     <div className="min-w-[14rem] flex-1 space-y-1">
@@ -645,8 +920,8 @@ export function InstagramSchedulePanel({
                         <Badge tone={st.tone}>{st.label}</Badge>
                         <Badge tone="neutral">{FORMAT_LABELS[item.format]?.badge ?? item.format}</Badge>
                         <span className="font-mono text-xs font-semibold">{item.codes.join(" + ")}</span>
-                        <span className="text-xs text-muted">
-                          → {item.accountUsername ? `@${item.accountUsername}` : item.accountName}
+                        <span className="rounded-md bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg">
+                          @{item.accountUsername || item.accountName}
                         </span>
                       </div>
                       {item.caption && <p className="line-clamp-1 text-xs text-muted">{item.caption}</p>}
@@ -654,6 +929,16 @@ export function InstagramSchedulePanel({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      {item.status === "published" && item.permalink && (
+                        <a
+                          href={item.permalink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/25"
+                        >
+                          Ver no Instagram ↗
+                        </a>
+                      )}
                       <input
                         type="datetime-local"
                         value={localVal}
@@ -678,7 +963,7 @@ export function InstagramSchedulePanel({
                             disabled={busy}
                             onClick={() => handleScheduleAction(item.id, { action: "publish_now" })}
                           >
-                            Publicar agora
+                            {item.status === "publishing" ? "Publicando…" : "Publicar agora"}
                           </Button>
                           {item.status !== "canceled" && (
                             <Button

@@ -317,7 +317,7 @@ export async function listInstagramAccounts(sql: Sql, organizationId: string): P
     `select id, organization_id, name, username, ig_user_id, status, last_verified_at, last_error, created_at
        from instagram_accounts
       where organization_id = $1
-      order by created_at asc`,
+      order by (case when username = 'grupomercatta' then 0 else 1 end) asc, coalesce(username, name) asc`,
     [organizationId],
   );
   return r.rows.map((row) => ({
@@ -601,6 +601,19 @@ export async function createBulkInstagramSchedules(
       ...(input.timezoneOffsetMinutes !== undefined ? { timezoneOffsetMinutes: input.timezoneOffsetMinutes } : {}),
     });
 
+    const allRenderIdsInBatch = groups.flatMap((g) => g.renderIds);
+    if (allRenderIdsInBatch.length > 0) {
+      await tx.query(
+        `delete from social_schedules
+          where organization_id = $1
+            and project_id = $2
+            and instagram_account_id = $3
+            and status in ('scheduled', 'failed', 'canceled')
+            and render_ids && $4::uuid[]`,
+        [input.organizationId, input.projectId, input.instagramAccountId, allRenderIdsInBatch],
+      );
+    }
+
     const schedules: SocialScheduleView[] = [];
     const toPublish: { jobId: string; scheduleId: string; scheduledAt: Date }[] = [];
     const shareToFeed = input.shareToFeed ?? true;
@@ -714,7 +727,15 @@ export async function listSocialSchedules(
        join instagram_accounts a on a.id = s.instagram_account_id
       where s.organization_id = $1
         and ($2::uuid is null or s.project_id = $2::uuid)
-      order by s.scheduled_at asc, s.created_at asc`,
+      order by
+        (case
+          when s.status = 'publishing' then 0
+          when s.status = 'published' then 1
+          when s.status = 'failed' then 2
+          else 3
+        end) asc,
+        s.scheduled_at asc,
+        s.created_at asc`,
     [organizationId, projectId ?? null],
   );
 
@@ -871,40 +892,53 @@ async function createAndUploadResumableIgVideoContainer(
     throw new UserFacingError(data.error?.message ?? `Falha ao criar container resumable no Instagram Graph API (HTTP ${res.status}).`);
   }
   const uploadUri = data.uri || `https://rupload.facebook.com/ig-api-upload/v21.0/${data.id}`;
-  const upRes = await fetch(uploadUri, {
-    method: "POST",
-    headers: {
-      Authorization: `OAuth ${accessToken}`,
-      offset: "0",
-      file_size: String(videoBuffer.byteLength),
-    },
-    body: new Uint8Array(videoBuffer),
-  });
-  const upData = (await upRes.json().catch(() => ({}))) as {
-    success?: boolean;
-    debug_info?: { message?: string };
-    error?: { message?: string };
-  };
-  if (!upRes.ok || upData.success === false) {
-    throw new UserFacingError(
-      upData.error?.message ?? upData.debug_info?.message ?? `Falha no envio binário do vídeo para a Meta (HTTP ${upRes.status}).`,
-    );
+  let lastUploadErr = "Falha no envio binário do vídeo para a Meta.";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const upRes = await fetch(uploadUri, {
+      method: "POST",
+      headers: {
+        Authorization: `OAuth ${accessToken}`,
+        offset: "0",
+        file_size: String(videoBuffer.byteLength),
+      },
+      body: new Uint8Array(videoBuffer),
+    });
+    const upData = (await upRes.json().catch(() => ({}))) as {
+      success?: boolean;
+      debug_info?: { message?: string };
+      error?: { message?: string };
+    };
+    if (upRes.ok && upData.success !== false) {
+      return data.id;
+    }
+    lastUploadErr =
+      upData.error?.message ?? upData.debug_info?.message ?? `Falha no envio binário do vídeo para a Meta (HTTP ${upRes.status}).`;
+    if (attempt < 3) {
+      await new Promise((r) => setTimeout(r, 2500));
+    }
   }
-  return data.id;
+  throw new UserFacingError(lastUploadErr);
 }
 
 async function publishIgMediaContainer(igUserId: string, accessToken: string, creationId: string): Promise<string> {
-  const body = new URLSearchParams({ creation_id: creationId, access_token: accessToken });
-  const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(igUserId)}/media_publish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  const data = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
-  if (!res.ok || !data.id) {
-    throw new UserFacingError(data.error?.message ?? `Falha ao publicar mídia no Instagram Graph API (HTTP ${res.status}).`);
+  let lastErr = "Falha ao publicar mídia no Instagram Graph API.";
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    const body = new URLSearchParams({ creation_id: creationId, access_token: accessToken });
+    const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(igUserId)}/media_publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    const data = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
+    if (res.ok && data.id) {
+      return data.id;
+    }
+    lastErr = data.error?.message ?? `Falha ao publicar mídia no Instagram Graph API (HTTP ${res.status}).`;
+    if (attempt < 6) {
+      await new Promise((r) => setTimeout(r, 4000));
+    }
   }
-  return data.id;
+  throw new UserFacingError(lastErr);
 }
 
 /**
