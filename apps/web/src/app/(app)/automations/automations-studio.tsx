@@ -208,6 +208,7 @@ export function AutomationsStudio({
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 24, y: 24 });
 
   // Refs para Drag & Drop com listener global em `window` (nunca gruda o mouse!)
+  const canvasViewportRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{
     mode: "node" | "pan";
     nodeId?: NodeId;
@@ -219,6 +220,43 @@ export function AutomationsStudio({
   } | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const panRef = useRef(pan);
+  panRef.current = pan;
+
+  function applyZoomDelta(delta: number, clientX?: number, clientY?: number) {
+    const prevZoom = zoomRef.current;
+    const nextZoom = Math.min(1.75, Math.max(0.35, Number((prevZoom + delta).toFixed(2))));
+    if (nextZoom === prevZoom) return;
+
+    const viewport = canvasViewportRef.current;
+    if (viewport && clientX !== undefined && clientY !== undefined) {
+      const rect = viewport.getBoundingClientRect();
+      const cursorX = clientX - rect.left;
+      const cursorY = clientY - rect.top;
+      const currentPan = panRef.current;
+      // Mantém o ponto sob o cursor fixo ao dar/retirar zoom
+      const worldX = (cursorX - currentPan.x) / prevZoom;
+      const worldY = (cursorY - currentPan.y) / prevZoom;
+      setPan({
+        x: Math.round(cursorX - worldX * nextZoom),
+        y: Math.round(cursorY - worldY * nextZoom),
+      });
+    }
+    setZoom(nextZoom);
+  }
+
+  // Listener nativo de roda do mouse / pinch no canvas para dar e retirar zoom suavemente
+  useEffect(() => {
+    const el = canvasViewportRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const step = e.ctrlKey ? -e.deltaY * 0.01 : e.deltaY < 0 ? 0.08 : -0.08;
+      applyZoomDelta(step, e.clientX, e.clientY);
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   useEffect(() => {
     function onWindowPointerMove(e: PointerEvent) {
@@ -424,7 +462,6 @@ export function AutomationsStudio({
     if (e.button !== 0) return;
     e.stopPropagation();
     setSelectedNode(id);
-    setDrawerMode("inspector");
     const pos = nodePositions[id];
     dragStateRef.current = {
       mode: "node",
@@ -687,8 +724,8 @@ export function AutomationsStudio({
   }
 
   return (
-    /* WORKSPACE DE TELA CHEIA (OCUPA 100% DA JANELA ABAIXO DO TOPBAR) */
-    <div className="fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col bg-[#08090d] text-white">
+    /* WORKSPACE DE TELA CHEIA COM ALTURA E LARGURA 100% EXPLÍCITAS */
+    <div className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] -my-8 flex h-[calc(100dvh-4rem)] min-h-[780px] w-screen flex-col overflow-hidden bg-[#08090d] text-white">
       {/* BARRA DE COMANDO SUPERIOR DO STUDIO (ESTILO MANYCHAT / FIGMA) */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#10121a] px-5 py-2.5">
         {/* Esquerda: Seletor de Fluxo + Conta do Instagram */}
@@ -813,18 +850,24 @@ export function AutomationsStudio({
         </div>
       </div>
 
-      {/* Alertas flutuantes */}
+      {/* Alertas flutuantes discretos no rodapé */}
       {(error || successMsg) && (
-        <div className="absolute left-1/2 top-16 z-50 -translate-x-1/2 max-w-xl w-full px-4">
+        <div
+          onClick={() => {
+            setError(null);
+            setSuccessMsg(null);
+          }}
+          className="cursor-pointer absolute bottom-5 left-1/2 z-50 -translate-x-1/2 max-w-xl w-full px-4"
+        >
           {error && <Alert>{error}</Alert>}
           {successMsg && <Alert tone="success">{successMsg}</Alert>}
         </div>
       )}
 
       {/* CORPO PRINCIPAL: CANVAS 100% TELA CHEIA + GAVETA LATERAL RETRÁTIL */}
-      <div className="relative flex flex-1 overflow-hidden">
+      <div className="relative flex h-[calc(100dvh-7.5rem)] min-h-[700px] w-full flex-1 overflow-hidden">
         {/* BARRA FLUTUANTE NO TOPO ESQUERDO DO CANVAS: ADICIONAR/ATIVAR BLOCOS + AUTO-ORGANIZAR */}
-        <div className=" absolute left-4 top-4 z-30 flex flex-wrap items-center gap-2 rounded-2xl border border-white/15 bg-[#12141f]/95 p-2 shadow-2xl backdrop-blur">
+        <div className="absolute left-4 top-4 z-30 flex flex-wrap items-center gap-2 rounded-2xl border border-white/15 bg-[#12141f]/95 p-2 shadow-2xl backdrop-blur">
           <span className="px-2 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
             Etapas do Fluxo:
           </span>
@@ -884,40 +927,109 @@ export function AutomationsStudio({
           >
             ✨ Auto-Organizar Tela
           </button>
+
+          <div className="h-5 w-px bg-white/10 mx-1" />
+
+          {/* Controles de Zoom também na barra superior para acesso imediato */}
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/40 px-2 py-1">
+            <button
+              type="button"
+              onClick={() => applyZoomDelta(-0.12)}
+              className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-sm font-bold text-white hover:bg-pink-500/30"
+              title="Diminuir Zoom (afastar)"
+            >
+              −
+            </button>
+            <span className="min-w-[3.2rem] text-center font-mono text-xs font-bold text-pink-300">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => applyZoomDelta(0.12)}
+              className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-sm font-bold text-white hover:bg-pink-500/30"
+              title="Aumentar Zoom (aproximar)"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setZoom(1);
+                setPan({ x: 24, y: 24 });
+              }}
+              className="ml-1 rounded-md bg-white/5 px-2 py-0.5 text-[11px] font-medium text-zinc-300 hover:bg-white/15 hover:text-white"
+              title="Resetar Zoom para 100%"
+            >
+              100%
+            </button>
+          </div>
         </div>
 
-        {/* CONTROLES DE ZOOM NO RODAPÉ ESQUERDO DO CANVAS */}
-        <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#12141f]/95 p-1.5 shadow-xl backdrop-blur">
+        {/* BARRA DE ZOOM CENTRALIZADA NO RODAPÉ (LONGE DO ÍCONE 'N' DO CANTO ESQUERDO) */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-2xl border border-white/15 bg-[#12141f]/95 px-3 py-2 shadow-2xl backdrop-blur">
+          <span className="text-[11px] font-semibold text-zinc-400">🔍 Zoom:</span>
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.1).toFixed(2))))}
-            className="h-8 w-8 rounded-lg bg-white/5 text-sm font-bold hover:bg-white/15"
+            onClick={() => applyZoomDelta(-0.12)}
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-bold text-white transition hover:bg-pink-500/25 hover:border-pink-500/40"
+            title="Diminuir Zoom"
           >
             −
           </button>
-          <span className="min-w-[3.5rem] text-center font-mono text-xs font-semibold text-zinc-200">
+          <input
+            type="range"
+            min={35}
+            max={175}
+            step={5}
+            value={Math.round(zoom * 100)}
+            onChange={(e) => setZoom(Number(e.target.value) / 100)}
+            className="h-1.5 w-28 cursor-pointer accent-pink-500"
+            title="Arraste para ajustar o zoom"
+          />
+          <span className="min-w-[3.2rem] text-center font-mono text-xs font-bold text-white">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.min(1.3, Number((z + 0.1).toFixed(2))))}
-            className="h-8 w-8 rounded-lg bg-white/5 text-sm font-bold hover:bg-white/15"
+            onClick={() => applyZoomDelta(0.12)}
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-bold text-white transition hover:bg-pink-500/25 hover:border-pink-500/40"
+            title="Aumentar Zoom"
           >
             +
           </button>
+          <div className="h-5 w-px bg-white/10 mx-0.5" />
           <button
             type="button"
             onClick={autoArrangeLayout}
-            className="rounded-lg bg-white/5 px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-white/15"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/15 hover:text-white"
           >
             Ajustar à Tela
           </button>
+          <span className="hidden lg:inline text-[11px] text-zinc-400 pl-1">
+            (ou use o scroll do mouse)
+          </span>
         </div>
+
+        {/* BOTÃO FLUTUANTE NA BORDA DIREITA QUANDO A ABA ESTÁ ENCOLHIDA */}
+        {drawerMode === "closed" && (
+          <button
+            type="button"
+            onClick={() => setDrawerMode("inspector")}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-2 rounded-l-2xl border border-r-0 border-pink-500/50 bg-[#141726] px-3.5 py-4 text-xs font-bold text-white shadow-2xl transition hover:bg-pink-500/20"
+            title="Expandir aba lateral de edição"
+          >
+            <span className="text-base text-pink-400">❮</span>
+            <span className="[writing-mode:vertical-rl] rotate-180 tracking-wider uppercase text-[11px] font-bold text-zinc-200">
+              Abrir Painel Lateral
+            </span>
+          </button>
+        )}
 
         {/* CANVAS INFINITO DE TELA CHEIA */}
         <div
+          ref={canvasViewportRef}
           onPointerDown={startPanningCanvas}
-          className="relative flex-1 cursor-grab select-none overflow-hidden active:cursor-grabbing"
+          className="relative h-full min-h-[700px] flex-1 cursor-grab select-none overflow-hidden active:cursor-grabbing"
           style={{
             backgroundImage:
               "radial-gradient(rgba(255, 255, 255, 0.13) 1px, transparent 1px)",
@@ -1335,56 +1447,67 @@ export function AutomationsStudio({
           </div>
         </div>
 
-        {/* GAVETA LATERAL DIREITA (INSPECTOR / SIMULADOR / CRM) — PODE SER FECHADA P/ TELA 100% LIVRE */}
+        {/* GAVETA LATERAL DIREITA (INSPECTOR / SIMULADOR / CRM) — PODE SER ENCOLHIDA P/ DIREITA */}
         {drawerMode !== "closed" && (
-          <aside className="z-30 flex w-full max-w-[27rem] flex-col justify-between border-l border-white/10 bg-[#11131d] p-5 shadow-2xl overflow-y-auto">
-            <div className="space-y-5">
-              {/* Cabeçalho da Gaveta com Botão Fechar */}
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <div className="flex gap-1.5">
+          <div className="relative z-30 flex h-full">
+            {/* Alça vertical na borda esquerda da aba para encolher para a direita com 1 clique */}
+            <button
+              type="button"
+              onClick={() => setDrawerMode("closed")}
+              className="absolute -left-8 top-1/2 -translate-y-1/2 z-40 flex h-24 w-8 flex-col items-center justify-center gap-1 rounded-l-2xl border border-r-0 border-white/15 bg-[#141726] text-xs font-bold text-zinc-200 shadow-2xl transition hover:border-pink-500/50 hover:bg-pink-500/20 hover:text-white"
+              title="Encolher aba para a direita"
+            >
+              <span className="text-sm text-pink-400">❯</span>
+            </button>
+
+            <aside className="flex h-full w-full max-w-[27rem] min-w-[24rem] flex-col justify-between border-l border-white/10 bg-[#11131d] p-5 shadow-2xl overflow-y-auto">
+              <div className="space-y-5">
+                {/* Cabeçalho da Gaveta com Botão Encolher para a Direita */}
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setDrawerMode("inspector")}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        drawerMode === "inspector"
+                          ? "bg-pink-500 text-white"
+                          : "bg-white/5 text-zinc-400 hover:text-white"
+                      }`}
+                    >
+                      ⚙️ Editar Bloco
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDrawerMode("simulator")}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        drawerMode === "simulator"
+                          ? "bg-emerald-500 text-white"
+                          : "bg-white/5 text-zinc-400 hover:text-white"
+                      }`}
+                    >
+                      📱 Simulador
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDrawerMode("crm")}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        drawerMode === "crm"
+                          ? "bg-cyan-500 text-white"
+                          : "bg-white/5 text-zinc-400 hover:text-white"
+                      }`}
+                    >
+                      👥 CRM ({initialSessions.length})
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setDrawerMode("inspector")}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                      drawerMode === "inspector"
-                        ? "bg-pink-500 text-white"
-                        : "bg-white/5 text-zinc-400 hover:text-white"
-                    }`}
+                    onClick={() => setDrawerMode("closed")}
+                    className="inline-flex items-center gap-1 rounded-lg border border-pink-500/40 bg-pink-500/15 px-3 py-1.5 text-xs font-bold text-pink-200 transition hover:bg-pink-500/30 hover:text-white"
+                    title="Encolher painel lateral para a direita"
                   >
-                    ⚙️ Editar Bloco
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDrawerMode("simulator")}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                      drawerMode === "simulator"
-                        ? "bg-emerald-500 text-white"
-                        : "bg-white/5 text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    📱 Simulador
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDrawerMode("crm")}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                      drawerMode === "crm"
-                        ? "bg-cyan-500 text-white"
-                        : "bg-white/5 text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    👥 CRM ({initialSessions.length})
+                    Encolher ❯
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDrawerMode("closed")}
-                  className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-white"
-                  title="Fechar painel lateral para ver o Canvas em tela cheia"
-                >
-                  ✕ Fechar
-                </button>
-              </div>
 
               {/* MODO 1: INSPETOR DE BLOCO */}
               {drawerMode === "inspector" && (
@@ -1853,6 +1976,7 @@ export function AutomationsStudio({
               {busySave ? <Spinner /> : "💾"} Salvar e Publicar Fluxo
             </button>
           </aside>
+          </div>
         )}
       </div>
     </div>

@@ -41,14 +41,12 @@ export default async function AutomationsPage() {
   const webhookUrl = `${baseAppUrl}/api/instagram/webhook`;
 
   return (
-    <div className="animate-in">
-      <AutomationsStudio
-        accounts={accounts}
-        initialAutomations={automations}
-        initialSessions={sessions}
-        webhookUrl={webhookUrl}
-      />
-    </div>
+    <AutomationsStudio
+      accounts={accounts}
+      initialAutomations={automations}
+      initialSessions={sessions}
+      webhookUrl={webhookUrl}
+    />
   );
 }
 
