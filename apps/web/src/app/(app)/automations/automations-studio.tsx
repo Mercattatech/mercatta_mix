@@ -15,156 +15,201 @@ import type {
   SimulationStepResult,
   TriggerType,
 } from "@mercatta/server";
-import { Alert, Badge, Button, Input, Spinner } from "@/components/ui";
+import { Alert, Input, Spinner } from "@/components/ui";
 
-const NODE_WIDTH = 296;
+const NODE_WIDTH = 304;
+
+/* Ícones vetoriais minimalistas (estilo Linear / Stripe Workflows) */
+function NodeKindIcon({ kind, className = "h-4 w-4" }: { kind: CustomNodeKind; className?: string }) {
+  switch (kind) {
+    case "trigger":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+      );
+    case "comment_reply":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      );
+    case "follow_gate":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <polyline points="16 11 18 13 22 9" />
+        </svg>
+      );
+    case "not_following":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      );
+    case "lead_capture":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="7" y1="9" x2="17" y2="9" />
+          <line x1="7" y1="13" x2="13" y2="13" />
+        </svg>
+      );
+    case "dm_message":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <line x1="22" y1="2" x2="11" y2="13" />
+          <polygon points="22 2 15 22 11 13 2 9 22 2" />
+        </svg>
+      );
+    case "delay":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+      );
+    case "tag_crm":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+          <line x1="7" y1="7" x2="7.01" y2="7" />
+        </svg>
+      );
+  }
+}
 
 const NODE_KIND_META: Record<
   CustomNodeKind,
   {
-    icon: string;
-    badge: string;
+    category: string;
     defaultTitle: string;
     subtitle: string;
-    borderColor: string;
-    activeRing: string;
-    badgeBg: string;
+    accentText: string;
+    iconBg: string;
     edgeColor: string;
   }
 > = {
   trigger: {
-    icon: "⚡",
-    badge: "Início",
-    defaultTitle: "Quando o Cliente Interagir",
-    subtitle: "Gatilho do Instagram",
-    borderColor: "border-pink-500/45 hover:border-pink-400",
-    activeRing: "border-pink-500 ring-2 ring-pink-500/40",
-    badgeBg: "bg-pink-500/20 text-pink-300",
-    edgeColor: "#ec4899",
+    category: "Gatilho",
+    defaultTitle: "Gatilho de Entrada",
+    subtitle: "Inicia quando o cliente interage",
+    accentText: "text-indigo-400",
+    iconBg: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+    edgeColor: "#6366f1",
   },
   comment_reply: {
-    icon: "💬",
-    badge: "Comentário",
-    defaultTitle: "Responder no Comentário",
-    subtitle: "Resposta pública no Reel/Post",
-    borderColor: "border-indigo-500/45 hover:border-indigo-400",
-    activeRing: "border-indigo-400 ring-2 ring-indigo-500/40",
-    badgeBg: "bg-indigo-500/20 text-indigo-300",
-    edgeColor: "#818cf8",
+    category: "Comentário",
+    defaultTitle: "Resposta no Comentário",
+    subtitle: "Responde publicamente no Reel/Post",
+    accentText: "text-sky-400",
+    iconBg: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+    edgeColor: "#38bdf8",
   },
   follow_gate: {
-    icon: "🔒",
-    badge: "Condição",
-    defaultTitle: "Trava: Segue o Perfil?",
-    subtitle: "2 saídas: ✓ Segue / ✕ Não segue",
-    borderColor: "border-emerald-500/45 hover:border-emerald-400",
-    activeRing: "border-emerald-400 ring-2 ring-emerald-500/40",
-    badgeBg: "bg-emerald-500/20 text-emerald-300",
+    category: "Condição",
+    defaultTitle: "Verificação de Seguidor",
+    subtitle: "Valida na API Meta se segue a conta",
+    accentText: "text-emerald-400",
+    iconBg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
     edgeColor: "#10b981",
   },
   not_following: {
-    icon: "👀",
-    badge: "Retenção",
-    defaultTitle: "Aviso: Ainda Não Segue",
-    subtitle: "Enviado se clicar sem seguir",
-    borderColor: "border-amber-500/45 hover:border-amber-400",
-    activeRing: "border-amber-400 ring-2 ring-amber-500/40",
-    badgeBg: "bg-amber-500/20 text-amber-300",
+    category: "Retenção",
+    defaultTitle: "Aviso de Não Seguidor",
+    subtitle: "Solicita seguir antes de liberar",
+    accentText: "text-amber-400",
+    iconBg: "bg-amber-500/10 text-amber-400 border-amber-500/20",
     edgeColor: "#f59e0b",
   },
   lead_capture: {
-    icon: "📲",
-    badge: "Captura",
-    defaultTitle: "Pedir WhatsApp / E-mail",
-    subtitle: "Aguarda resposta e salva no CRM",
-    borderColor: "border-cyan-500/45 hover:border-cyan-400",
-    activeRing: "border-cyan-400 ring-2 ring-cyan-500/40",
-    badgeBg: "bg-cyan-500/20 text-cyan-300",
+    category: "Captura",
+    defaultTitle: "Captura de Contato",
+    subtitle: "Coleta WhatsApp ou e-mail no Direct",
+    accentText: "text-cyan-400",
+    iconBg: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
     edgeColor: "#06b6d4",
   },
   dm_message: {
-    icon: "📩",
-    badge: "Direct",
-    defaultTitle: "Mensagem no Direct + Link",
-    subtitle: "Envia texto e botão clicável",
-    borderColor: "border-purple-500/45 hover:border-purple-400",
-    activeRing: "border-purple-400 ring-2 ring-purple-500/40",
-    badgeBg: "bg-purple-500/20 text-purple-300",
-    edgeColor: "#a855f7",
+    category: "Direct",
+    defaultTitle: "Entrega via Direct",
+    subtitle: "Envia mensagem direta e botão de ação",
+    accentText: "text-violet-400",
+    iconBg: "bg-violet-500/10 text-violet-400 border-violet-500/20",
+    edgeColor: "#8b5cf6",
   },
   delay: {
-    icon: "⏱️",
-    badge: "Delay",
-    defaultTitle: "Aguardar Tempo",
-    subtitle: "Pausa antes do próximo bloco",
-    borderColor: "border-sky-500/45 hover:border-sky-400",
-    activeRing: "border-sky-400 ring-2 ring-sky-500/40",
-    badgeBg: "bg-sky-500/20 text-sky-300",
-    edgeColor: "#38bdf8",
+    category: "Temporizador",
+    defaultTitle: "Espera Programada",
+    subtitle: "Aguarda intervalo antes de prosseguir",
+    accentText: "text-slate-300",
+    iconBg: "bg-slate-500/10 text-slate-300 border-slate-500/20",
+    edgeColor: "#64748b",
   },
   tag_crm: {
-    icon: "🏷️",
-    badge: "Tag CRM",
-    defaultTitle: "Aplicar Etiqueta no Lead",
-    subtitle: "Classifica o contato no CRM",
-    borderColor: "border-fuchsia-500/45 hover:border-fuchsia-400",
-    activeRing: "border-fuchsia-400 ring-2 ring-fuchsia-500/40",
-    badgeBg: "bg-fuchsia-500/20 text-fuchsia-300",
-    edgeColor: "#e879f9",
+    category: "CRM",
+    defaultTitle: "Classificar Lead",
+    subtitle: "Registra etiqueta no histórico",
+    accentText: "text-fuchsia-400",
+    iconBg: "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/20",
+    edgeColor: "#d946ef",
   },
 };
 
 const PRESET_TEMPLATES = [
   {
     id: "reel_lead_magnet",
-    badge: "🔥 Isca Digital (QUERO)",
-    title: "Isca Digital nos Reels (Comente QUERO + Só entrega se seguir)",
+    badge: "Isca Digital (Reels)",
+    title: "Isca Digital nos Reels — Validação de Seguidor",
     triggerType: "comment" as TriggerType,
     matchMode: "contains" as MatchMode,
     keywords: ["QUERO", "EU QUERO", "LINK", "ACESSO", "MATERIAL"],
     replyToComment: true,
     commentReplies: [
-      "Acabei de te enviar no Direct! Dá uma olhada nas suas mensagens 🔥",
-      "Te chamei na DM com o acesso! Confere lá 📩",
-      "Enviado no seu Direct agora mesmo! 🚀",
+      "Acabei de enviar os detalhes no seu Direct. Confira suas mensagens.",
+      "Enviado para você no Direct agora mesmo.",
+      "Te chamei na DM com o link de acesso.",
     ],
     requireFollow: true,
     followGateMessage:
-      "Opa, {nome}! Vi seu comentário 👋\n\nPara liberar o seu acesso exclusivo gratuitamente, eu só preciso confirmar que você já segue o nosso perfil {conta}.\n\n👉 Siga {conta} e toque no botão abaixo para receber na hora:",
-    followGateButtonLabel: "✅ Já sigo! Liberar meu acesso",
+      "Olá, {nome}. Recebi seu comentário.\n\nPara liberar o seu acesso exclusivo, confirme que você já segue o perfil {conta} tocando no botão abaixo:",
+    followGateButtonLabel: "Já sigo, liberar acesso",
     notFollowingMessage:
-      "Hmm, acabei de verificar aqui e parece que você ainda não está seguindo {conta} 👀\n\n1️⃣ Entre no perfil {conta} e clique em Seguir\n2️⃣ Volte aqui e clique em '✅ Já sigo!' que o sistema libera na mesma hora!",
+      "Verificamos que você ainda não segue o perfil {conta}.\n\n1. Acesse {conta} e toque em Seguir\n2. Volte nesta conversa e toque no botão abaixo para liberar imediatamente.",
     collectLeadField: "none" as CollectLeadField,
     collectLeadPrompt: "",
     dmMessage:
-      "Confirmado que você é nosso seguidor! 🎉\n\nAqui está o acesso prometido. Toque no botão abaixo para abrir agora:",
-    dmButtonTitle: "Abrir Acesso Exclusivo 🚀",
+      "Inscrição confirmada como seguidor.\n\nSeu acesso está disponível no botão abaixo:",
+    dmButtonTitle: "Acessar conteúdo",
     dmButtonUrl: "https://grupomercatta.com.br",
   },
   {
     id: "whatsapp_capture",
-    badge: "📲 Captura WhatsApp",
-    title: "Capturar WhatsApp + Trava de Seguidor (ORÇAMENTO / VIP)",
+    badge: "Qualificação WhatsApp",
+    title: "Qualificação Comercial — Captura de WhatsApp no Direct",
     triggerType: "any" as TriggerType,
     matchMode: "contains" as MatchMode,
     keywords: ["ORCAMENTO", "CONSULTORIA", "VIP", "PRECO", "CONTATO"],
     replyToComment: true,
     commentReplies: [
-      "Te mandei os detalhes no Direct agora! Confere lá 💬",
-      "Acabei de te chamar no Direct para te passar tudo! 🚀",
+      "Enviamos as informações comerciais no seu Direct.",
+      "Acabei de te chamar no Direct para dar andamento ao seu atendimento.",
     ],
     requireFollow: true,
     followGateMessage:
-      "Olá, {nome}! Que bom ver seu interesse 🚀\n\nAntes de te enviar o atendimento VIP e condições especiais, siga nosso perfil {conta} e clique no botão abaixo:",
-    followGateButtonLabel: "✅ Já sigo! Continuar",
+      "Olá, {nome}.\n\nAntes de enviar a proposta comercial, siga nosso perfil {conta} e confirme no botão abaixo:",
+    followGateButtonLabel: "Já sigo, continuar",
     notFollowingMessage:
-      "Verifiquei aqui e você ainda não segue {conta} 👀 Siga nosso perfil primeiro e depois clique no botão abaixo para liberar!",
+      "Ainda não identificamos você entre os seguidores de {conta}. Siga o perfil e clique novamente abaixo para prosseguir.",
     collectLeadField: "whatsapp" as CollectLeadField,
     collectLeadPrompt:
-      "Show! Você já segue nosso perfil ✅\n\nAgora me digita aqui o seu WhatsApp com DDD (ex.: 11999999999) para nossa equipe te enviar a proposta e liberar o link:",
+      "Perfeito. Informe seu número de WhatsApp com DDD (ex.: 11999999999) para registrarmos seu atendimento:",
     dmMessage:
-      "Perfeito, WhatsApp registrado com sucesso! 🎯\n\nVocê também já pode falar direto com nosso time clicando no botão abaixo:",
-    dmButtonTitle: "Falar no WhatsApp Agora 💬",
+      "Seu contato foi registrado para atendimento prioritário. Você também pode iniciar a conversa diretamente abaixo:",
+    dmButtonTitle: "Abrir atendimento",
     dmButtonUrl: "https://wa.me/5511999999999",
   },
 ];
@@ -186,8 +231,8 @@ function buildGraphFromFields(cfg: {
     {
       id: "trigger",
       kind: "trigger",
-      title: "1. Quando o Cliente",
-      x: 50,
+      title: "Gatilho de Entrada",
+      x: 56,
       y: 180,
     },
   ];
@@ -197,9 +242,9 @@ function buildGraphFromFields(cfg: {
     nodes.push({
       id: "comment_reply",
       kind: "comment_reply",
-      title: "Responder no Comentário",
-      x: 410,
-      y: 40,
+      title: "Resposta no Comentário",
+      x: 420,
+      y: 44,
       commentReplies: cfg.commentReplies,
       text: cfg.commentReplies.join("\n"),
     });
@@ -209,17 +254,17 @@ function buildGraphFromFields(cfg: {
     nodes.push({
       id: "follow_gate",
       kind: "follow_gate",
-      title: "Trava de Seguidor",
-      x: 410,
-      y: 250,
+      title: "Verificação de Seguidor",
+      x: 420,
+      y: 256,
       text: cfg.followGateMessage,
       buttonTitle: cfg.followGateButtonLabel,
     });
     nodes.push({
       id: "not_following",
       kind: "not_following",
-      title: "Aviso: Ainda Não Segue",
-      x: 790,
+      title: "Aviso de Não Seguidor",
+      x: 800,
       y: 420,
       text: cfg.notFollowingMessage,
     });
@@ -229,21 +274,21 @@ function buildGraphFromFields(cfg: {
     nodes.push({
       id: "lead_capture",
       kind: "lead_capture",
-      title: cfg.collectLeadField === "email" ? "Pedir E-mail" : "Pedir WhatsApp",
-      x: 790,
+      title: cfg.collectLeadField === "email" ? "Solicitar E-mail" : "Solicitar WhatsApp",
+      x: 800,
       y: 170,
       leadField: cfg.collectLeadField,
       text:
         cfg.collectLeadPrompt ||
-        "Me digita seu WhatsApp com DDD (ex.: 11999999999) para liberar:",
+        "Informe seu WhatsApp com DDD (ex.: 11999999999) para liberar seu acesso:",
     });
   }
 
-  const dmX = cfg.collectLeadField !== "none" ? 1160 : cfg.requireFollow ? 790 : 410;
+  const dmX = cfg.collectLeadField !== "none" ? 1170 : cfg.requireFollow ? 800 : 420;
   nodes.push({
     id: "dm_delivery",
     kind: "dm_message",
-    title: "Entrega Final no Direct",
+    title: "Entrega via Direct",
     x: dmX,
     y: 170,
     text: cfg.dmMessage,
@@ -263,16 +308,16 @@ function buildGraphFromFields(cfg: {
       from: "trigger",
       fromPort: "out",
       to: "comment_reply",
-      color: "#ec4899",
-      label: "1º Responde no Reel",
+      color: "#6366f1",
+      label: "Responde comentário",
     });
     edges.push({
       id: "e-comment-next",
       from: "comment_reply",
       fromPort: "out",
       to: firstDmTarget,
-      color: "#818cf8",
-      label: "Chama no Direct",
+      color: "#38bdf8",
+      label: "Inicia Direct",
     });
   } else {
     edges.push({
@@ -280,8 +325,8 @@ function buildGraphFromFields(cfg: {
       from: "trigger",
       fromPort: "out",
       to: firstDmTarget,
-      color: "#ec4899",
-      label: "Envia Direct",
+      color: "#6366f1",
+      label: "Inicia Direct",
     });
   }
 
@@ -293,7 +338,7 @@ function buildGraphFromFields(cfg: {
       fromPort: "yes",
       to: afterFollow,
       color: "#10b981",
-      label: "✓ SIM, Segue",
+      label: "Segue a conta",
     });
     edges.push({
       id: "e-follow-no",
@@ -301,7 +346,7 @@ function buildGraphFromFields(cfg: {
       fromPort: "no",
       to: "not_following",
       color: "#f59e0b",
-      label: "✕ NÃO Segue",
+      label: "Não segue",
     });
   }
 
@@ -312,7 +357,7 @@ function buildGraphFromFields(cfg: {
       fromPort: "out",
       to: "dm_delivery",
       color: "#06b6d4",
-      label: "Contato Salvo",
+      label: "Contato salvo",
     });
   }
 
@@ -342,7 +387,6 @@ export function AutomationsStudio({
     [initialAutomations, selectedAutoId],
   );
 
-  // Configurações de Gatilho e Conta
   const [accountId, setAccountId] = useState<string>(
     activeAuto?.instagramAccountId ?? defaultAcc?.id ?? "",
   );
@@ -360,7 +404,6 @@ export function AutomationsStudio({
   );
   const [newKeywordInput, setNewKeywordInput] = useState<string>("");
 
-  // Grafo Personalizado de Caixas e Conectores (100% livre para criar/remover/ligar)
   const initialGraph = useMemo<CustomFlowGraph>(() => {
     if (activeAuto?.flowGraph && activeAuto.flowGraph.nodes?.length > 0) {
       return activeAuto.flowGraph;
@@ -388,10 +431,9 @@ export function AutomationsStudio({
   const [drawerMode, setDrawerMode] = useState<"closed" | "inspector" | "simulator" | "crm">(
     "inspector",
   );
-  const [zoom, setZoom] = useState<number>(0.88);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 24, y: 24 });
+  const [zoom, setZoom] = useState<number>(0.9);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 32, y: 32 });
 
-  // Estado para puxar uma linha conectora de uma bolinha até outra caixa
   const [connectingDraft, setConnectingDraft] = useState<{
     fromNodeId: string;
     fromPort: "out" | "yes" | "no";
@@ -452,7 +494,6 @@ export function AutomationsStudio({
 
   useEffect(() => {
     function onWindowPointerMove(e: PointerEvent) {
-      // Se estiver puxando um fio conector entre caixas
       const draft = connectingDraftRef.current;
       if (draft && canvasViewportRef.current) {
         const rect = canvasViewportRef.current.getBoundingClientRect();
@@ -510,7 +551,6 @@ export function AutomationsStudio({
     };
   }, []);
 
-  // Estado do Simulador Interativo
   const [simUsername, setSimUsername] = useState<string>("cliente.interessado");
   const [simCommentText, setSimCommentText] = useState<string>("EU QUERO");
   const [simIsFollowing, setSimIsFollowing] = useState<boolean>(false);
@@ -566,12 +606,11 @@ export function AutomationsStudio({
     );
   }, [initialAutomations]);
 
-  // Funções de manipulação de Caixinhas (Criar, Duplicar, Excluir, Editar, Ligar/Desligar)
   function addNewBox(kind: CustomNodeKind) {
     const meta = NODE_KIND_META[kind];
     const id = `${kind}_${Date.now().toString(36)}`;
     const maxRight = nodes.reduce((max, n) => Math.max(max, n.x), 80);
-    const newX = Math.min(1250, maxRight + 340);
+    const newX = Math.min(1280, maxRight + 350);
     const newY = 140 + ((nodes.length * 55) % 260);
 
     const newNode: CustomFlowNode = {
@@ -582,52 +621,51 @@ export function AutomationsStudio({
       y: newY,
       ...(kind === "comment_reply"
         ? {
-            text: "Acabei de te enviar no Direct! Confere lá 🔥\nTe mandei na DM agora mesmo! 🚀",
+            text: "Acabei de enviar os detalhes no seu Direct.\nEnviado na sua DM agora mesmo.",
             commentReplies: [
-              "Acabei de te enviar no Direct! Confere lá 🔥",
-              "Te mandei na DM agora mesmo! 🚀",
+              "Acabei de enviar os detalhes no seu Direct.",
+              "Enviado na sua DM agora mesmo.",
             ],
           }
         : {}),
       ...(kind === "follow_gate"
         ? {
-            text: "Opa, {nome}! Para liberar seu acesso exclusivo, confirme que você já segue o perfil {conta} clicando abaixo:",
-            buttonTitle: "✅ Já sigo! Liberar meu acesso",
+            text: "Olá, {nome}. Para liberar seu acesso exclusivo, confirme que você já segue o perfil {conta} no botão abaixo:",
+            buttonTitle: "Já sigo, liberar acesso",
           }
         : {}),
       ...(kind === "not_following"
         ? {
-            text: "Verifiquei aqui e você ainda não segue {conta} 👀 Siga nosso perfil primeiro e clique em '✅ Já sigo!' para liberar na hora!",
+            text: "Ainda não identificamos você como seguidor de {conta}. Siga o perfil e toque novamente no botão de confirmação.",
           }
         : {}),
       ...(kind === "lead_capture"
         ? {
             leadField: "whatsapp",
-            text: "Qual é o seu WhatsApp com DDD (ex.: 11999999999) para eu registrar e liberar seu link?",
+            text: "Informe seu número de WhatsApp com DDD (ex.: 11999999999) para liberar o link:",
           }
         : {}),
       ...(kind === "dm_message"
         ? {
-            text: "Aqui está o seu acesso exclusivo! 🎉 Toque no botão abaixo para abrir:",
-            buttonTitle: "Abrir Acesso Agora 🚀",
+            text: "Aqui está o seu acesso exclusivo. Utilize o botão abaixo para abrir:",
+            buttonTitle: "Acessar conteúdo",
             buttonUrl: "https://grupomercatta.com.br",
           }
         : {}),
       ...(kind === "delay"
         ? {
             delaySeconds: 5,
-            text: "Aguardar 5 segundos antes da próxima mensagem",
+            text: "Aguarda 5 segundos antes de executar a próxima etapa",
           }
         : {}),
       ...(kind === "tag_crm"
         ? {
-            tagName: "LEAD_QUENTE",
-            text: "Marca o cliente com a etiqueta LEAD_QUENTE no CRM",
+            tagName: "QUALIFICADO",
+            text: "Aplica etiqueta QUALIFICADO ao contato no CRM",
           }
         : {}),
     };
 
-    // Conecta automaticamente a partir da caixa selecionada se ela tiver saída livre
     const sourceNode = selectedNode ?? nodes[nodes.length - 1];
     setNodes((prev) => [...prev, newNode]);
 
@@ -658,9 +696,9 @@ export function AutomationsStudio({
                   : sourceMeta.edgeColor,
             label:
               port === "yes"
-                ? "✓ SIM, Segue"
+                ? "Segue a conta"
                 : port === "no"
-                  ? "✕ NÃO Segue"
+                  ? "Não segue"
                   : undefined,
           },
         ]);
@@ -678,8 +716,8 @@ export function AutomationsStudio({
       ...node,
       id,
       title: `${node.title} (Cópia)`,
-      x: node.x + 40,
-      y: node.y + 40,
+      x: node.x + 36,
+      y: node.y + 36,
     };
     setNodes((prev) => [...prev, copy]);
     setSelectedNodeId(id);
@@ -712,13 +750,12 @@ export function AutomationsStudio({
           : NODE_KIND_META[sourceNode.kind].edgeColor;
     const label =
       fromPort === "yes"
-        ? "✓ SIM, Segue"
+        ? "Segue a conta"
         : fromPort === "no"
-          ? "✕ NÃO Segue"
+          ? "Não segue"
           : undefined;
 
     setEdges((prev) => {
-      // Substitui conexão anterior da mesma porta de saída para manter o fluxo claro
       const filtered = prev.filter(
         (e) => !(e.from === fromId && e.fromPort === fromPort),
       );
@@ -743,11 +780,11 @@ export function AutomationsStudio({
 
   function startBlankCustomFlow() {
     setSelectedAutoId("new");
-    setName("Meu Fluxo Personalizado");
+    setName("Novo Fluxo Corporativo");
     const blankTrigger: CustomFlowNode = {
       id: "trigger",
       kind: "trigger",
-      title: "1. Quando o Cliente Interagir",
+      title: "Gatilho de Entrada",
       x: 80,
       y: 200,
     };
@@ -756,7 +793,7 @@ export function AutomationsStudio({
     setSelectedNodeId("trigger");
     setDrawerMode("inspector");
     setSuccessMsg(
-      "Fluxo em branco criado! Clique nos botões '+ Adicionar Caixa' na barra acima para montar e conectar as caixas do seu jeito.",
+      "Fluxo em branco iniciado. Adicione etapas na barra superior do canvas e conecte os pontos de saída.",
     );
   }
 
@@ -765,20 +802,20 @@ export function AutomationsStudio({
     if (!triggerNode) return;
     const others = nodes.filter((n) => n.id !== triggerNode.id);
     const updated: CustomFlowNode[] = [
-      { ...triggerNode, x: 50, y: 200 },
+      { ...triggerNode, x: 56, y: 200 },
       ...others.map((n, idx) => {
         const col = Math.floor(idx / 2) + 1;
         const row = idx % 2;
         return {
           ...n,
-          x: 50 + col * 370,
-          y: others.length === 1 ? 200 : row === 0 ? 70 : 340,
+          x: 56 + col * 372,
+          y: others.length === 1 ? 200 : row === 0 ? 72 : 340,
         };
       }),
     ];
     setNodes(updated);
-    setZoom(0.88);
-    setPan({ x: 24, y: 24 });
+    setZoom(0.9);
+    setPan({ x: 32, y: 32 });
   }
 
   function getPortCoords(
@@ -788,17 +825,17 @@ export function AutomationsStudio({
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return { x: 0, y: 0 };
     if (port === "in") {
-      return { x: node.x, y: node.y + 68 };
+      return { x: node.x, y: node.y + 64 };
     }
     if (node.kind === "follow_gate") {
-      if (port === "yes") return { x: node.x + NODE_WIDTH, y: node.y + 64 };
-      if (port === "no") return { x: node.x + NODE_WIDTH, y: node.y + 132 };
+      if (port === "yes") return { x: node.x + NODE_WIDTH, y: node.y + 58 };
+      if (port === "no") return { x: node.x + NODE_WIDTH, y: node.y + 118 };
     }
-    return { x: node.x + NODE_WIDTH, y: node.y + 68 };
+    return { x: node.x + NODE_WIDTH, y: node.y + 64 };
   }
 
   function makeBezierPath(x1: number, y1: number, x2: number, y2: number): string {
-    const dx = Math.max(70, Math.abs(x2 - x1) * 0.48);
+    const dx = Math.max(72, Math.abs(x2 - x1) * 0.46);
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   }
 
@@ -925,10 +962,9 @@ export function AutomationsStudio({
     setSimSessionId(null);
     setSimStage("idle");
     setActiveSimNodeIds([]);
-    setSuccessMsg(`Modelo "${tpl.badge}" carregado! Personalize as caixas como quiser.`);
+    setSuccessMsg(`Modelo "${tpl.badge}" aplicado ao canvas.`);
   }
 
-  // Extrai automaticamente os campos para o motor da Meta a partir das caixas montadas pelo usuário
   function deriveEngineFieldsFromGraph() {
     const commentNode = nodes.find((n) => n.kind === "comment_reply");
     const followNode = nodes.find((n) => n.kind === "follow_gate");
@@ -943,7 +979,7 @@ export function AutomationsStudio({
             .map((d) => (d.text || "").trim())
             .filter(Boolean)
             .join("\n\n")
-        : "Olá! Aqui está o acesso que você pediu 🚀";
+        : "Olá. Aqui está o seu link de acesso.";
 
     const replyLines = (commentNode?.text ?? "")
       .split("\n")
@@ -962,26 +998,26 @@ export function AutomationsStudio({
       commentReplies:
         replyLines.length > 0
           ? replyLines
-          : ["Acabei de te enviar no Direct! Confere lá 🔥"],
+          : ["Acabei de enviar os detalhes no seu Direct."],
       requireFollow: Boolean(followNode),
       followGateMessage:
         followNode?.text ||
-        "Opa, {nome}! Siga nosso perfil {conta} e toque no botão abaixo para liberar:",
-      followGateButtonLabel: followNode?.buttonTitle || "✅ Já sigo! Liberar acesso",
+        "Olá, {nome}. Siga o perfil {conta} e confirme no botão abaixo para liberar seu acesso:",
+      followGateButtonLabel: followNode?.buttonTitle || "Já sigo, liberar acesso",
       notFollowingMessage:
         notFollowNode?.text ||
-        "Ainda não encontrei você seguindo {conta} 👀 Siga o perfil e clique no botão novamente!",
+        "Ainda não identificamos você como seguidor de {conta}. Siga o perfil e confirme abaixo.",
       collectLeadField: leadField,
       collectLeadPrompt: leadNode?.text || "",
       dmMessage: combinedDmMessages,
-      dmButtonTitle: lastDmNode?.buttonTitle || "Acessar Agora 🚀",
+      dmButtonTitle: lastDmNode?.buttonTitle || "Acessar conteúdo",
       dmButtonUrl: lastDmNode?.buttonUrl || "",
     };
   }
 
   async function handleSaveAutomation() {
     if (!accountId) {
-      setError("Selecione uma conta do Instagram.");
+      setError("Selecione uma conta do Instagram antes de publicar.");
       return;
     }
     setBusySave(true);
@@ -1009,11 +1045,11 @@ export function AutomationsStudio({
         error?: string;
       };
       if (!res.ok || !data.automation) {
-        setError(data.error ?? "Não foi possível salvar a automação.");
+        setError(data.error ?? "Não foi possível salvar o fluxo.");
         return;
       }
       setSelectedAutoId(data.automation.id);
-      setSuccessMsg(`Fluxo personalizado "${data.automation.name}" salvo e publicado!`);
+      setSuccessMsg(`Fluxo "${data.automation.name}" publicado.`);
       router.refresh();
     } finally {
       setBusySave(false);
@@ -1023,7 +1059,7 @@ export function AutomationsStudio({
   async function handleRunSimulation(action: "trigger" | "check_follow" | "submit_lead") {
     const targetAutoId = selectedAutoId !== "new" ? selectedAutoId : initialAutomations[0]?.id;
     if (!targetAutoId) {
-      setError("Clique em 'Salvar e Publicar Fluxo' primeiro para testar seu fluxo personalizado.");
+      setError("Salve e publique o fluxo antes de iniciar a simulação.");
       return;
     }
     setBusySim(true);
@@ -1034,7 +1070,7 @@ export function AutomationsStudio({
         action === "submit_lead"
           ? simLeadInput
           : action === "check_follow"
-            ? "✅ Já sigo!"
+            ? "Já sigo, liberar acesso"
             : simCommentText;
 
       if (action === "trigger") {
@@ -1058,14 +1094,13 @@ export function AutomationsStudio({
       });
       const data = (await res.json().catch(() => ({}))) as SimulationStepResult & { error?: string };
       if (!res.ok || !data.session) {
-        setError(data.error ?? "Erro ao simular automação.");
+        setError(data.error ?? "Falha ao executar simulação.");
         return;
       }
 
       setSimSessionId(data.session.id);
       setSimStage(data.session.stage);
 
-      // Ilumina as caixas correspondentes no canvas
       const activeIds = nodes
         .filter((n) => {
           if (action === "trigger" && (n.kind === "trigger" || n.kind === "comment_reply"))
@@ -1122,11 +1157,11 @@ export function AutomationsStudio({
         error?: string;
       };
       if (!res.ok) {
-        setError(data.error ?? "Erro ao varrer comentários reais.");
+        setError(data.error ?? "Não foi possível sincronizar comentários.");
         return;
       }
       setSuccessMsg(
-        `Varredura concluída: ${data.checkedMedia ?? 0} Reels verificados e ${data.triggeredCount ?? 0} novo(s) comentário(s) respondido(s)!`,
+        `${data.checkedMedia ?? 0} publicações inspecionadas · ${data.triggeredCount ?? 0} novas interações processadas.`,
       );
       router.refresh();
     } finally {
@@ -1135,15 +1170,14 @@ export function AutomationsStudio({
   }
 
   return (
-    /* WORKSPACE DE TELA CHEIA COM ALTURA E LARGURA 100% EXPLÍCITAS */
-    <div className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] -my-8 flex h-[calc(100dvh-4rem)] min-h-[780px] w-screen flex-col overflow-hidden bg-[#08090d] text-white">
-      {/* BARRA DE COMANDO SUPERIOR DO STUDIO */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#10121a] px-5 py-2.5">
+    /* ENTERPRISE WORKSPACE — ARQUITETURA OBSIDIAN & GRAFITE (#090A0F / #11131A) */
+    <div className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] -my-8 flex h-[calc(100dvh-4rem)] min-h-[780px] w-screen flex-col overflow-hidden bg-[#090A0F] text-[#F1F5F9] antialiased">
+      {/* BARRA DE COMANDO CORPORATIVA (ALTURA 52PX, BORDAS 1PX PRECISAS) */}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] bg-[#11131A] px-5 py-2.5">
+        {/* Esquerda: Identidade do Fluxo + Conta Conectada + Modelos */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 via-pink-500 to-purple-600 text-sm font-bold text-white shadow">
-              ⚡
-            </span>
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400" title="Motor de automação online" />
             <select
               value={selectedAutoId}
               onChange={(e) => {
@@ -1155,52 +1189,50 @@ export function AutomationsStudio({
                   if (found) loadAutomationIntoForm(found);
                 }
               }}
-              className="h-9 max-w-[17rem] rounded-xl border border-white/15 bg-[#181b26] px-3 text-xs font-semibold text-white"
+              className="h-8 max-w-[18rem] rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs font-medium text-slate-100 focus:border-indigo-500 focus:outline-none"
             >
               {initialAutomations.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.status === "active" ? "🟢 " : "⏸️ "}
-                  {a.name}
+                  {a.name.replace(/^[^\wÀ-ú]+/, "")}
                 </option>
               ))}
-              <option value="new">✨ Criar Fluxo do Zero (Em Branco)...</option>
+              <option value="new">+ Novo fluxo em branco...</option>
             </select>
           </div>
 
           <button
             type="button"
             onClick={startBlankCustomFlow}
-            className="h-9 rounded-xl border border-pink-500/40 bg-pink-500/15 px-3 text-xs font-bold text-pink-200 transition hover:bg-pink-500/25"
-            title="Começar um fluxo totalmente em branco para montar as caixas que quiser"
+            className="h-8 rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06]"
           >
-            ✨ Novo Fluxo do Zero
+            Novo fluxo
           </button>
 
-          {/* Seletor rápido da @conta */}
-          <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#181b26] px-2.5 py-1.5">
-            <span className="text-[11px] text-zinc-400">Perfil:</span>
+          {/* Seletor de Conta */}
+          <div className="flex h-8 items-center gap-2 rounded-lg border border-white/[0.09] bg-[#171A24] px-3">
+            <span className="text-[11px] text-slate-400">Conta</span>
             <select
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-pink-300 focus:outline-none"
+              className="bg-transparent font-mono text-xs font-medium text-indigo-300 focus:outline-none"
             >
               {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id} className="bg-[#181b26] text-white">
+                <option key={acc.id} value={acc.id} className="bg-[#171A24] text-slate-100">
                   @{acc.username || acc.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Modelos Prontos */}
-          <div className="hidden 2xl:flex items-center gap-1.5 border-l border-white/10 pl-3">
-            <span className="text-[11px] text-zinc-400">Modelos:</span>
+          {/* Modelos base */}
+          <div className="hidden 2xl:flex items-center gap-1.5 border-l border-white/[0.07] pl-3">
+            <span className="text-[11px] text-slate-500">Modelos:</span>
             {PRESET_TEMPLATES.map((tpl) => (
               <button
                 key={tpl.id}
                 type="button"
                 onClick={() => applyPresetTemplate(tpl)}
-                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition hover:border-pink-500/50 hover:bg-pink-500/10"
+                className="rounded-md border border-white/[0.07] bg-white/[0.02] px-2.5 py-1 text-[11px] font-medium text-slate-300 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
               >
                 {tpl.badge}
               </button>
@@ -1208,163 +1240,144 @@ export function AutomationsStudio({
           </div>
         </div>
 
-        {/* Direita: Métricas + Simulador + CRM + Publicar */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="hidden lg:flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11px]">
+        {/* Direita: Telemetria Discreta + Navegação de Painel + Ação Primária */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="hidden xl:flex items-center gap-3 rounded-lg border border-white/[0.07] bg-[#0D0F16] px-3 py-1.5 text-[11px] text-slate-400">
             <span>
-              Disparos: <strong className="text-white">{totals.triggers}</strong>
+              Disparos <strong className="ml-1 font-mono text-slate-200">{totals.triggers}</strong>
             </span>
-            <span className="text-white/20">|</span>
+            <span className="h-3 w-px bg-white/[0.08]" />
             <span>
-              DMs: <strong className="text-pink-300">{totals.dms}</strong>
+              Directs <strong className="ml-1 font-mono text-slate-200">{totals.dms}</strong>
             </span>
-            <span className="text-white/20">|</span>
+            <span className="h-3 w-px bg-white/[0.08]" />
             <span>
-              Seguidores: <strong className="text-emerald-400">+{totals.followers}</strong>
+              Novos seguidores{" "}
+              <strong className="ml-1 font-mono text-emerald-400">+{totals.followers}</strong>
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setDrawerMode(drawerMode === "crm" ? "closed" : "crm")}
-            className={`h-9 rounded-xl border px-3 text-xs font-semibold transition ${
-              drawerMode === "crm"
-                ? "border-cyan-400 bg-cyan-500/20 text-cyan-200"
-                : "border-white/15 bg-[#181b26] text-zinc-200 hover:bg-white/10"
-            }`}
-          >
-            👥 CRM ({initialSessions.length})
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setDrawerMode(drawerMode === "simulator" ? "closed" : "simulator")}
-            className={`h-9 rounded-xl border px-3.5 text-xs font-semibold transition ${
-              drawerMode === "simulator"
-                ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
-                : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-            }`}
-          >
-            📱 Testar Fluxo
-          </button>
+          {/* Controle Segmentado do Painel Lateral */}
+          <div className="flex items-center rounded-lg border border-white/[0.08] bg-[#0D0F16] p-0.5">
+            <button
+              type="button"
+              onClick={() => setDrawerMode(drawerMode === "inspector" ? "closed" : "inspector")}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                drawerMode === "inspector"
+                  ? "bg-[#1E2230] text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Propriedades
+            </button>
+            <button
+              type="button"
+              onClick={() => setDrawerMode(drawerMode === "simulator" ? "closed" : "simulator")}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                drawerMode === "simulator"
+                  ? "bg-[#1E2230] text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Simulador
+            </button>
+            <button
+              type="button"
+              onClick={() => setDrawerMode(drawerMode === "crm" ? "closed" : "crm")}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                drawerMode === "crm"
+                  ? "bg-[#1E2230] text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Leads ({initialSessions.length})
+            </button>
+          </div>
 
           <button
             type="button"
             disabled={busySync}
             onClick={handleSyncRealComments}
-            className="h-9 rounded-xl border border-white/15 bg-[#181b26] px-3 text-xs font-semibold text-zinc-200 transition hover:bg-white/10 disabled:opacity-50"
+            className="h-8 rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06] disabled:opacity-50"
           >
-            {busySync ? "Sincronizando..." : "🔄 Varrer Comentários"}
+            {busySync ? "Sincronizando..." : "Sincronizar comentários"}
           </button>
 
           <button
             type="button"
             disabled={busySave}
             onClick={handleSaveAutomation}
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-4 font-display text-xs font-bold text-white shadow-lg transition hover:opacity-95 disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-2 rounded-lg bg-indigo-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
           >
-            {busySave ? <Spinner /> : "💾"} Salvar e Publicar Fluxo
+            {busySave && <Spinner />}
+            Salvar e publicar
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Alertas flutuantes */}
+      {/* Notificações de Sistema */}
       {(error || successMsg) && (
         <div
           onClick={() => {
             setError(null);
             setSuccessMsg(null);
           }}
-          className="cursor-pointer absolute bottom-16 left-1/2 z-50 -translate-x-1/2 max-w-xl w-full px-4"
+          className="cursor-pointer absolute bottom-16 left-1/2 z-50 -translate-x-1/2 max-w-lg w-full px-4"
         >
           {error && <Alert>{error}</Alert>}
           {successMsg && <Alert tone="success">{successMsg}</Alert>}
         </div>
       )}
 
-      {/* CORPO PRINCIPAL: CANVAS DE TELA CHEIA + GAVETA LATERAL RETRÁTIL */}
+      {/* ÁREA DE TRABALHO: CANVAS INFINITO + INSPETOR LATERAL COLAPSÁVEL */}
       <div className="relative flex h-[calc(100dvh-7.5rem)] min-h-[700px] w-full flex-1 overflow-hidden">
-        {/* PALETA SUPERIOR DE CAIXAS: ADICIONE QUANTAS CAIXAS QUISER AO SEU FLUXO */}
-        <div className="absolute left-4 top-4 z-30 flex flex-wrap items-center gap-1.5 rounded-2xl border border-white/15 bg-[#12141f]/95 p-2 shadow-2xl backdrop-blur max-w-[calc(100vw-3rem)]">
-          <span className="px-2 text-[11px] font-bold uppercase tracking-wider text-pink-300">
-            ➕ Adicionar Caixa:
-          </span>
+        {/* DOCK FLUTUANTE DE ETAPAS (DESIGN SÓBRIO E CORPORATIVO) */}
+        <div className="absolute left-5 top-4 z-30 flex flex-wrap items-center gap-1 rounded-xl border border-white/[0.08] bg-[#11131A]/95 p-1.5 shadow-2xl backdrop-blur-md">
+          <span className="px-2.5 text-[11px] font-medium text-slate-400">Adicionar etapa</span>
+          <div className="h-4 w-px bg-white/[0.08] mr-1" />
 
-          <button
-            type="button"
-            onClick={() => addNewBox("comment_reply")}
-            className="rounded-xl border border-indigo-400/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/30"
-          >
-            + 💬 Resposta Comentário
-          </button>
+          {(
+            [
+              { kind: "comment_reply", label: "Resposta Comentário" },
+              { kind: "dm_message", label: "Mensagem Direct" },
+              { kind: "follow_gate", label: "Verificador Seguidor" },
+              { kind: "not_following", label: "Aviso Não Segue" },
+              { kind: "lead_capture", label: "Captura de Lead" },
+              { kind: "delay", label: "Espera" },
+              { kind: "tag_crm", label: "Tag CRM" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              onClick={() => addNewBox(item.kind)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/[0.07] hover:text-white"
+            >
+              <span className={NODE_KIND_META[item.kind].accentText}>
+                <NodeKindIcon kind={item.kind} className="h-3.5 w-3.5" />
+              </span>
+              {item.label}
+            </button>
+          ))}
 
-          <button
-            type="button"
-            onClick={() => addNewBox("dm_message")}
-            className="rounded-xl border border-purple-400/40 bg-purple-500/15 px-2.5 py-1.5 text-xs font-semibold text-purple-200 transition hover:bg-purple-500/30"
-          >
-            + 📩 Mensagem Direct / Link
-          </button>
-
-          <button
-            type="button"
-            onClick={() => addNewBox("follow_gate")}
-            className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/30"
-          >
-            + 🔒 Condição: Segue o Perfil?
-          </button>
-
-          <button
-            type="button"
-            onClick={() => addNewBox("not_following")}
-            className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-2.5 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/30"
-          >
-            + 👀 Aviso Não Segue
-          </button>
-
-          <button
-            type="button"
-            onClick={() => addNewBox("lead_capture")}
-            className="rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-2.5 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/30"
-          >
-            + 📲 Capturar WhatsApp/E-mail
-          </button>
-
-          <button
-            type="button"
-            onClick={() => addNewBox("delay")}
-            className="rounded-xl border border-sky-400/40 bg-sky-500/15 px-2.5 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/30"
-          >
-            + ⏱️ Espera (Delay)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => addNewBox("tag_crm")}
-            className="rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/15 px-2.5 py-1.5 text-xs font-semibold text-fuchsia-200 transition hover:bg-fuchsia-500/30"
-          >
-            + 🏷️ Tag CRM
-          </button>
-
-          <div className="h-5 w-px bg-white/10 mx-1" />
+          <div className="h-4 w-px bg-white/[0.08] mx-1" />
 
           <button
             type="button"
             onClick={autoArrangeLayout}
-            className="rounded-xl border border-white/15 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+            className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
           >
-            ✨ Organizar
+            Alinhar grade
           </button>
         </div>
 
-        {/* BARRA DE ZOOM CENTRALIZADA NO RODAPÉ */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-2xl border border-white/15 bg-[#12141f]/95 px-3.5 py-2 shadow-2xl backdrop-blur">
-          <span className="text-[11px] font-semibold text-zinc-400">🔍 Zoom:</span>
+        {/* BARRA DE ZOOM DE PRECISÃO NO RODAPÉ CENTRAL */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-[#11131A]/95 px-3 py-1.5 shadow-2xl backdrop-blur-md">
           <button
             type="button"
             onClick={() => applyZoomDelta(-0.12)}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-bold text-white transition hover:bg-pink-500/25 hover:border-pink-500/40"
-            title="Diminuir Zoom"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.07] bg-[#171A24] text-sm font-medium text-slate-200 transition hover:border-white/20 hover:text-white"
+            title="Reduzir zoom"
           >
             −
           </button>
@@ -1375,64 +1388,62 @@ export function AutomationsStudio({
             step={5}
             value={Math.round(zoom * 100)}
             onChange={(e) => setZoom(Number(e.target.value) / 100)}
-            className="h-1.5 w-28 cursor-pointer accent-pink-500"
+            className="h-1 w-24 cursor-pointer accent-indigo-500"
           />
-          <span className="min-w-[3.2rem] text-center font-mono text-xs font-bold text-white">
+          <span className="min-w-[3rem] text-center font-mono text-[11px] font-medium text-slate-200">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
             onClick={() => applyZoomDelta(0.12)}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-bold text-white transition hover:bg-pink-500/25 hover:border-pink-500/40"
-            title="Aumentar Zoom"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.07] bg-[#171A24] text-sm font-medium text-slate-200 transition hover:border-white/20 hover:text-white"
+            title="Aumentar zoom"
           >
             +
           </button>
+          <div className="h-4 w-px bg-white/[0.08] mx-0.5" />
           <button
             type="button"
             onClick={() => {
               setZoom(1);
-              setPan({ x: 24, y: 24 });
+              setPan({ x: 32, y: 32 });
             }}
-            className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-white/15 hover:text-white"
+            className="rounded-md px-2 py-1 font-mono text-[11px] text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-200"
           >
             100%
           </button>
           <button
             type="button"
             onClick={autoArrangeLayout}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/15 hover:text-white"
+            className="rounded-md px-2 py-1 text-[11px] font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
           >
-            Ajustar à Tela
+            Enquadrar
           </button>
-          <span className="hidden xl:inline text-[11px] text-zinc-400 pl-1">
-            • Arraste da bolinha direita <strong className="text-pink-300">●</strong> de uma caixa até outra para ligar!
-          </span>
         </div>
 
-        {/* BOTÃO FLUTUANTE NA BORDA DIREITA QUANDO A ABA ESTÁ ENCOLHIDA */}
+        {/* ALÇA DISCRETA NA BORDA DIREITA QUANDO O PAINEL ESTÁ RECOLHIDO */}
         {drawerMode === "closed" && (
           <button
             type="button"
             onClick={() => setDrawerMode("inspector")}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-2 rounded-l-2xl border border-r-0 border-pink-500/50 bg-[#141726] px-3.5 py-4 text-xs font-bold text-white shadow-2xl transition hover:bg-pink-500/20"
-            title="Expandir aba lateral de edição"
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-1.5 rounded-l-xl border border-r-0 border-white/[0.12] bg-[#11131A] px-2.5 py-4 text-xs font-medium text-slate-300 shadow-2xl transition hover:border-indigo-500/50 hover:text-white"
+            title="Expandir painel de propriedades"
           >
-            <span className="text-base text-pink-400">❮</span>
-            <span className="[writing-mode:vertical-rl] rotate-180 tracking-wider uppercase text-[11px] font-bold text-zinc-200">
-              Abrir Painel Lateral
+            <span className="text-indigo-400">❮</span>
+            <span className="[writing-mode:vertical-rl] rotate-180 tracking-wide text-[11px] font-medium text-slate-300">
+              Propriedades
             </span>
           </button>
         )}
 
-        {/* CANVAS INFINITO DE TELA CHEIA */}
+        {/* CANVAS INFINITO ARQUITETURAL */}
         <div
           ref={canvasViewportRef}
           onPointerDown={startPanningCanvas}
           className="relative h-full min-h-[700px] flex-1 cursor-grab select-none overflow-hidden active:cursor-grabbing"
           style={{
             backgroundImage:
-              "radial-gradient(rgba(255, 255, 255, 0.13) 1px, transparent 1px)",
+              "radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px)",
             backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
             backgroundPosition: `${pan.x}px ${pan.y}px`,
           }}
@@ -1446,7 +1457,7 @@ export function AutomationsStudio({
             }}
             className="relative"
           >
-            {/* CONECTORES CURVOS SVG + LINHA SENDO PUXADA PELO MOUSE */}
+            {/* CONECTORES VETORIAIS DE PRECISÃO */}
             <svg
               width={2200}
               height={1200}
@@ -1458,7 +1469,7 @@ export function AutomationsStudio({
                 const pathD = makeBezierPath(start.x, start.y, end.x, end.y);
                 const midX = (start.x + end.x) / 2;
                 const midY = (start.y + end.y) / 2 - 10;
-                const color = edge.color || "#ec4899";
+                const color = edge.color || "#6366f1";
                 const isSimActive =
                   activeSimNodeIds.includes(edge.from) && activeSimNodeIds.includes(edge.to);
 
@@ -1468,20 +1479,19 @@ export function AutomationsStudio({
                       d={pathD}
                       fill="none"
                       stroke={color}
-                      strokeOpacity={isSimActive ? 0.45 : 0.2}
-                      strokeWidth={isSimActive ? 9 : 6}
+                      strokeOpacity={isSimActive ? 0.35 : 0.14}
+                      strokeWidth={isSimActive ? 6 : 4}
                     />
                     <path
                       d={pathD}
                       fill="none"
                       stroke={color}
-                      strokeWidth={2.5}
-                      strokeDasharray="7 5"
+                      strokeOpacity={0.85}
+                      strokeWidth={1.75}
                     />
-                    <circle cx={start.x} cy={start.y} r={5} fill={color} />
-                    <circle cx={end.x} cy={end.y} r={6} fill={color} />
+                    <circle cx={start.x} cy={start.y} r={4} fill={color} />
+                    <circle cx={end.x} cy={end.y} r={4.5} fill={color} />
 
-                    {/* Etiqueta e botão × clicável para remover a conexão */}
                     <g
                       transform={`translate(${midX}, ${midY})`}
                       className="pointer-events-auto cursor-pointer"
@@ -1491,23 +1501,22 @@ export function AutomationsStudio({
                       }}
                     >
                       <rect
-                        x={edge.label ? -68 : -14}
-                        y={-11}
-                        width={edge.label ? 136 : 28}
-                        height={22}
-                        rx={8}
-                        fill="#11131c"
-                        stroke={color}
-                        strokeOpacity={0.7}
-                        strokeWidth={1.3}
+                        x={edge.label ? -64 : -12}
+                        y={-10}
+                        width={edge.label ? 128 : 24}
+                        height={20}
+                        rx={6}
+                        fill="#11131A"
+                        stroke="rgba(255,255,255,0.12)"
+                        strokeWidth={1}
                       />
                       <text
                         x={0}
-                        y={4}
+                        y={3.5}
                         textAnchor="middle"
-                        fill="#f4f4f5"
-                        fontSize={10.5}
-                        fontWeight={600}
+                        fill="#CBD5E1"
+                        fontSize={10}
+                        fontWeight={500}
                       >
                         {edge.label ? `${edge.label}  ×` : "×"}
                       </text>
@@ -1516,7 +1525,6 @@ export function AutomationsStudio({
                 );
               })}
 
-              {/* Linha viva quando o usuário está puxando um conector com o mouse */}
               {connectingDraft && (
                 <path
                   d={makeBezierPath(
@@ -1526,14 +1534,14 @@ export function AutomationsStudio({
                     connectingDraft.mouseY,
                   )}
                   fill="none"
-                  stroke="#f472b6"
-                  strokeWidth={3}
-                  strokeDasharray="6 4"
+                  stroke="#818cf8"
+                  strokeWidth={2}
+                  strokeDasharray="5 4"
                 />
               )}
             </svg>
 
-            {/* RENDERIZAÇÃO DINÂMICA DE TODAS AS CAIXAS DO FLUXO */}
+            {/* BLOCOS DO FLUXO (DESIGN EXECUTIVO DE ALTO VALOR) */}
             {nodes.map((node) => {
               const meta = NODE_KIND_META[node.kind];
               const isSelected = selectedNodeId === node.id;
@@ -1544,74 +1552,97 @@ export function AutomationsStudio({
                   key={node.id}
                   onPointerDown={(e) => startDraggingNode(e, node.id)}
                   onPointerUp={(e) => finishConnectionOnNode(e, node.id)}
+                  onDoubleClick={() => {
+                    setSelectedNodeId(node.id);
+                    setDrawerMode("inspector");
+                  }}
                   style={{
                     left: node.x,
                     top: node.y,
                     width: NODE_WIDTH,
                   }}
-                  className={`group absolute rounded-2xl border bg-[#141724] p-4 shadow-2xl transition-colors ${
-                    isSelected ? meta.activeRing : meta.borderColor
-                  } ${isSimHit ? "ring-4 ring-emerald-400" : ""}`}
+                  className={`group absolute rounded-xl border bg-[#11131A] p-4 shadow-[0_14px_34px_-10px_rgba(0,0,0,0.65)] transition-all ${
+                    isSelected
+                      ? "border-indigo-500 ring-1 ring-indigo-500/40"
+                      : "border-white/[0.08] hover:border-white/[0.18]"
+                  } ${isSimHit ? "ring-2 ring-emerald-400" : ""}`}
                 >
-                  {/* BOLINHA DE ENTRADA (ESQUERDA) — SOLTE O CONECTOR AQUI */}
+                  {/* Porta de Entrada */}
                   {node.kind !== "trigger" && (
                     <div
                       onPointerUp={(e) => finishConnectionOnNode(e, node.id)}
-                      title="Entrada da caixa (solte um conector aqui)"
-                      className="absolute -left-3 top-[60px] flex h-6 w-6 items-center justify-center rounded-full border-2 border-white/40 bg-[#141724] text-[10px] text-white shadow transition hover:scale-125 hover:border-pink-400"
+                      title="Conectar entrada"
+                      className="absolute -left-2.5 top-[56px] flex h-5 w-5 items-center justify-center rounded-full border border-white/25 bg-[#11131A] transition hover:scale-125 hover:border-indigo-400"
                     >
-                      ●
+                      <span className="h-2 w-2 rounded-full bg-slate-300" />
                     </div>
                   )}
 
-                  {/* BOLINHA(S) DE SAÍDA (DIREITA) — ARRASTE DAQUI PARA OUTRA CAIXA */}
+                  {/* Portas de Saída */}
                   {node.kind === "follow_gate" ? (
                     <>
                       <div
                         onPointerDown={(e) => startStartingConnection(e, node.id, "yes")}
-                        title="Arraste daqui para ligar a saída '✓ SIM, Segue'"
-                        className="absolute -right-3.5 top-[52px] flex h-7 w-7 cursor-crosshair items-center justify-center rounded-full border-2 border-emerald-400 bg-emerald-950 text-[10px] font-bold text-emerald-300 shadow-lg transition hover:scale-125"
+                        title="Arraste para conectar saída: Segue a conta"
+                        className="absolute -right-2.5 top-[50px] flex h-5 w-5 cursor-crosshair items-center justify-center rounded-full border border-emerald-500/60 bg-[#11131A] transition hover:scale-125 hover:bg-emerald-500/20"
                       >
-                        ✓
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
                       </div>
                       <div
                         onPointerDown={(e) => startStartingConnection(e, node.id, "no")}
-                        title="Arraste daqui para ligar a saída '✕ NÃO Segue'"
-                        className="absolute -right-3.5 top-[120px] flex h-7 w-7 cursor-crosshair items-center justify-center rounded-full border-2 border-amber-400 bg-amber-950 text-[10px] font-bold text-amber-300 shadow-lg transition hover:scale-125"
+                        title="Arraste para conectar saída: Não segue"
+                        className="absolute -right-2.5 top-[110px] flex h-5 w-5 cursor-crosshair items-center justify-center rounded-full border border-amber-500/60 bg-[#11131A] transition hover:scale-125 hover:bg-amber-500/20"
                       >
-                        ✕
+                        <span className="h-2 w-2 rounded-full bg-amber-400" />
                       </div>
                     </>
                   ) : (
                     <div
                       onPointerDown={(e) => startStartingConnection(e, node.id, "out")}
-                      title="Arraste esta bolinha até outra caixa para conectar!"
-                      className="absolute -right-3 top-[60px] flex h-6 w-6 cursor-crosshair items-center justify-center rounded-full border-2 border-pink-400 bg-[#141724] text-[10px] text-pink-300 shadow-lg transition hover:scale-125 hover:bg-pink-500 hover:text-white"
+                      title="Arraste para conectar a próxima etapa"
+                      className="absolute -right-2.5 top-[56px] flex h-5 w-5 cursor-crosshair items-center justify-center rounded-full border border-indigo-400/60 bg-[#11131A] transition hover:scale-125 hover:bg-indigo-500/20"
                     >
-                      ●
+                      <span className="h-2 w-2 rounded-full bg-indigo-400" />
                     </div>
                   )}
 
-                  {/* CABEÇALHO DA CAIXA COM DUPLICAR E EXCLUIR */}
-                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10 text-xs">
-                        {meta.icon}
+                  {/* Cabeçalho Limpo da Etapa */}
+                  <div className="flex items-start justify-between gap-2 border-b border-white/[0.06] pb-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${meta.iconBg}`}
+                      >
+                        <NodeKindIcon kind={node.kind} className="h-4 w-4" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate font-display text-xs font-bold text-white">
-                          {node.title}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-medium text-slate-400">
+                            {meta.category}
+                          </span>
+                        </div>
+                        <p className="truncate text-xs font-semibold text-slate-100">
+                          {node.title.replace(/^[^\wÀ-ú]+/, "")}
                         </p>
-                        <p className="truncate text-[10px] text-zinc-400">{meta.subtitle}</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <span
-                        className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${meta.badgeBg}`}
+                    <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedNodeId(node.id);
+                          setDrawerMode("inspector");
+                        }}
+                        className="rounded-md p-1 text-slate-400 transition hover:bg-white/[0.07] hover:text-white"
+                        title="Configurar etapa"
                       >
-                        {meta.badge}
-                      </span>
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                        </svg>
+                      </button>
                       {node.kind !== "trigger" && (
                         <>
                           <button
@@ -1621,10 +1652,13 @@ export function AutomationsStudio({
                               e.stopPropagation();
                               duplicateBox(node);
                             }}
-                            className="rounded p-1 text-[11px] text-zinc-400 hover:bg-white/10 hover:text-white"
-                            title="Duplicar esta caixa"
+                            className="rounded-md p-1 text-slate-400 transition hover:bg-white/[0.07] hover:text-white"
+                            title="Duplicar etapa"
                           >
-                            📄
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
                           </button>
                           <button
                             type="button"
@@ -1633,43 +1667,46 @@ export function AutomationsStudio({
                               e.stopPropagation();
                               deleteBox(node.id);
                             }}
-                            className="rounded p-1 text-[11px] text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
-                            title="Excluir esta caixa"
+                            className="rounded-md p-1 text-slate-400 transition hover:bg-red-500/15 hover:text-red-400"
+                            title="Remover etapa"
                           >
-                            🗑️
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
                           </button>
                         </>
                       )}
                     </div>
                   </div>
 
-                  {/* CONTEÚDO RESUMIDO DA CAIXA */}
-                  <div className="mt-3 space-y-2 text-xs">
+                  {/* Corpo do Card */}
+                  <div className="mt-3 space-y-2.5 text-xs">
                     {node.kind === "trigger" ? (
                       <>
-                        <div className="flex items-center justify-between rounded-lg bg-black/40 px-2.5 py-1.5">
-                          <span className="text-zinc-400">Conta:</span>
-                          <strong className="text-pink-300">
+                        <div className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-[#0D0F16] px-2.5 py-1.5">
+                          <span className="text-[11px] text-slate-400">Canal</span>
+                          <span className="font-mono text-[11px] text-slate-200">
                             @{selectedAccountObj?.username || "grupomercatta"}
-                          </strong>
+                          </span>
                         </div>
-                        <div className="rounded-xl border border-white/10 bg-black/30 p-2 text-zinc-200 font-medium">
+                        <div className="rounded-lg border border-white/[0.05] bg-[#0D0F16] px-2.5 py-2 text-[11px] text-slate-300">
                           {triggerType === "comment"
-                            ? "💬 Comentário em Reel ou Post"
+                            ? "Comentário em publicação ou Reel"
                             : triggerType === "dm"
-                              ? "📩 Mensagem no Direct (DM)"
-                              : "⚡ Comentário, Direct ou Story"}
+                              ? "Mensagem recebida no Direct"
+                              : "Comentário, Direct ou resposta de Story"}
                         </div>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1 pt-0.5">
                           {matchMode === "any_comment" ? (
-                            <span className="rounded-lg bg-pink-500/20 px-2 py-0.5 text-[11px] font-semibold text-pink-200">
-                              Qualquer comentário
+                            <span className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
+                              Qualquer interação
                             </span>
                           ) : (
                             parsedKeywords.slice(0, 6).map((kw) => (
                               <span
                                 key={kw}
-                                className="rounded-lg border border-pink-500/40 bg-pink-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-pink-200"
+                                className="rounded-md border border-white/[0.08] bg-[#171A24] px-2 py-0.5 font-mono text-[10px] font-medium text-slate-200"
                               >
                                 {kw}
                               </span>
@@ -1680,40 +1717,34 @@ export function AutomationsStudio({
                     ) : (
                       <>
                         {node.text && (
-                          <div className="rounded-xl border border-white/10 bg-black/40 p-2.5 text-zinc-200 line-clamp-3 leading-relaxed">
+                          <p className="rounded-lg border border-white/[0.05] bg-[#0D0F16] p-2.5 text-[11px] leading-relaxed text-slate-300 line-clamp-3">
                             {node.text}
-                          </div>
+                          </p>
                         )}
                         {node.buttonTitle && (
-                          <div className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-center text-[11px] font-bold text-white">
-                            🔘 {node.buttonTitle}
+                          <div className="flex items-center justify-between rounded-lg border border-white/[0.08] bg-[#171A24] px-2.5 py-1.5 text-[11px] font-medium text-slate-200">
+                            <span className="truncate">{node.buttonTitle}</span>
+                            <span className="text-[10px] text-slate-500">CTA</span>
+                          </div>
+                        )}
+                        {node.kind === "follow_gate" && (
+                          <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400">
+                            <span className="text-emerald-400">● Segue a conta</span>
+                            <span className="text-amber-400">● Não segue</span>
                           </div>
                         )}
                         {node.kind === "delay" && (
-                          <div className="rounded-xl bg-sky-500/15 px-3 py-1.5 text-center text-[11px] font-bold text-sky-200">
-                            ⏱️ Aguardar {node.delaySeconds ?? 5} segundos
+                          <div className="rounded-lg border border-white/[0.05] bg-[#0D0F16] px-2.5 py-1.5 font-mono text-[11px] text-slate-300">
+                            Intervalo: {node.delaySeconds ?? 5}s
                           </div>
                         )}
                         {node.kind === "tag_crm" && (
-                          <div className="rounded-xl bg-fuchsia-500/15 px-3 py-1.5 text-center font-mono text-[11px] font-bold text-fuchsia-200">
-                            🏷️ #{node.tagName || "LEAD_VIP"}
+                          <div className="rounded-lg border border-white/[0.05] bg-[#0D0F16] px-2.5 py-1.5 font-mono text-[11px] text-fuchsia-300">
+                            #{node.tagName || "QUALIFICADO"}
                           </div>
                         )}
                       </>
                     )}
-
-                    <button
-                      type="button"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedNodeId(node.id);
-                        setDrawerMode("inspector");
-                      }}
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 py-1.5 text-center text-[11px] font-semibold text-zinc-200 transition hover:bg-pink-500/20 hover:border-pink-500/40"
-                    >
-                      ✏️ Editar esta Caixa
-                    </button>
                   </div>
                 </div>
               );
@@ -1721,128 +1752,111 @@ export function AutomationsStudio({
           </div>
         </div>
 
-        {/* GAVETA LATERAL DIREITA (PODE SER ENCOLHIDA PARA A DIREITA) */}
+        {/* PAINEL DE PROPRIEDADES CORPORATIVO (COLAPSÁVEL PARA A DIREITA) */}
         {drawerMode !== "closed" && (
           <div className="relative z-30 flex h-full">
             <button
               type="button"
               onClick={() => setDrawerMode("closed")}
-              className="absolute -left-8 top-1/2 -translate-y-1/2 z-40 flex h-24 w-8 flex-col items-center justify-center gap-1 rounded-l-2xl border border-r-0 border-white/15 bg-[#141726] text-xs font-bold text-zinc-200 shadow-2xl transition hover:border-pink-500/50 hover:bg-pink-500/20 hover:text-white"
-              title="Encolher aba para a direita"
+              className="absolute -left-7 top-1/2 -translate-y-1/2 z-40 flex h-20 w-7 items-center justify-center rounded-l-xl border border-r-0 border-white/[0.1] bg-[#11131A] text-xs text-slate-400 shadow-xl transition hover:border-white/25 hover:text-white"
+              title="Recolher painel para a direita"
             >
-              <span className="text-sm text-pink-400">❯</span>
+              ❯
             </button>
 
-            <aside className="flex h-full w-full max-w-[27rem] min-w-[24rem] flex-col justify-between border-l border-white/10 bg-[#11131d] p-5 shadow-2xl overflow-y-auto">
+            <aside className="flex h-full w-full max-w-[26rem] min-w-[23rem] flex-col justify-between border-l border-white/[0.08] bg-[#11131A] p-5 shadow-2xl overflow-y-auto">
               <div className="space-y-5">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setDrawerMode("inspector")}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                        drawerMode === "inspector"
-                          ? "bg-pink-500 text-white"
-                          : "bg-white/5 text-zinc-400 hover:text-white"
-                      }`}
-                    >
-                      ⚙️ Editar Caixa
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDrawerMode("simulator")}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                        drawerMode === "simulator"
-                          ? "bg-emerald-500 text-white"
-                          : "bg-white/5 text-zinc-400 hover:text-white"
-                      }`}
-                    >
-                      📱 Simulador
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDrawerMode("crm")}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                        drawerMode === "crm"
-                          ? "bg-cyan-500 text-white"
-                          : "bg-white/5 text-zinc-400 hover:text-white"
-                      }`}
-                    >
-                      👥 CRM ({initialSessions.length})
-                    </button>
+                <div className="flex items-center justify-between border-b border-white/[0.07] pb-3.5">
+                  <div>
+                    <h2 className="text-xs font-semibold text-white">
+                      {drawerMode === "inspector"
+                        ? "Propriedades da Etapa"
+                        : drawerMode === "simulator"
+                          ? "Simulador de Execução"
+                          : "Registro de Leads e Sessões"}
+                    </h2>
+                    <p className="text-[11px] text-slate-400">
+                      {drawerMode === "inspector"
+                        ? "Configure parâmetros, mensagens e ramificações"
+                        : drawerMode === "simulator"
+                          ? "Valide o comportamento do fluxo antes de publicar"
+                          : "Contatos qualificados pelas automações"}
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setDrawerMode("closed")}
-                    className="inline-flex items-center gap-1 rounded-lg border border-pink-500/40 bg-pink-500/15 px-3 py-1.5 text-xs font-bold text-pink-200 transition hover:bg-pink-500/30 hover:text-white"
+                    className="rounded-lg border border-white/[0.08] bg-[#171A24] px-2.5 py-1 text-[11px] font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
                   >
-                    Encolher ❯
+                    Recolher ❯
                   </button>
                 </div>
 
-                {/* MODO 1: EDITOR COMPLETO DA CAIXA SELECIONADA + CONEXÕES */}
+                {/* MODO 1: PROPRIEDADES DA ETAPA */}
                 {drawerMode === "inspector" && selectedNode && (
                   <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-zinc-300">
-                        Nome do Fluxo de Automação
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium text-slate-400">
+                        Nome do fluxo
                       </label>
                       <Input value={name} onChange={(e) => setName(e.target.value)} />
                     </div>
 
-                    {/* Lista rápida das caixas criadas no fluxo */}
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                        Caixas no seu fluxo ({nodes.length}):
+                      <label className="text-[11px] font-medium text-slate-400">
+                        Etapa em edição ({nodes.length})
                       </label>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-1">
                         {nodes.map((n) => (
                           <button
                             key={n.id}
                             type="button"
                             onClick={() => setSelectedNodeId(n.id)}
-                            className={`rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition ${
+                            className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
                               selectedNodeId === n.id
-                                ? "border-pink-500 bg-pink-500/20 text-white"
-                                : "border-white/10 bg-white/5 text-zinc-400 hover:text-white"
+                                ? "border-indigo-500/60 bg-indigo-500/15 text-white"
+                                : "border-white/[0.07] bg-[#171A24] text-slate-400 hover:text-slate-200"
                             }`}
                           >
-                            {NODE_KIND_META[n.kind].icon} {n.title}
+                            {n.title.replace(/^[^\wÀ-ú]+/, "")}
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* Card de edição da caixa selecionada */}
-                    <div className="space-y-4 rounded-2xl border border-white/15 bg-white/5 p-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-display text-sm font-bold text-white">
-                          {NODE_KIND_META[selectedNode.kind].icon} Editando:{" "}
-                          {selectedNode.title}
-                        </h3>
+                    <div className="space-y-4 rounded-xl border border-white/[0.08] bg-[#0D0F16] p-4">
+                      <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className={NODE_KIND_META[selectedNode.kind].accentText}>
+                            <NodeKindIcon kind={selectedNode.kind} className="h-4 w-4" />
+                          </span>
+                          <span className="text-xs font-semibold text-slate-100">
+                            {NODE_KIND_META[selectedNode.kind].category}
+                          </span>
+                        </div>
                         {selectedNode.kind !== "trigger" && (
                           <div className="flex gap-1.5">
                             <button
                               type="button"
                               onClick={() => duplicateBox(selectedNode)}
-                              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/15"
+                              className="rounded-md border border-white/[0.08] bg-[#171A24] px-2 py-1 text-[11px] text-slate-300 hover:text-white"
                             >
-                              📄 Duplicar
+                              Duplicar
                             </button>
                             <button
                               type="button"
                               onClick={() => deleteBox(selectedNode.id)}
-                              className="rounded-lg border border-red-500/30 bg-red-500/15 px-2 py-1 text-[11px] font-semibold text-red-300 hover:bg-red-500/30"
+                              className="rounded-md border border-red-500/25 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 hover:bg-red-500/20"
                             >
-                              🗑️ Excluir
+                              Remover
                             </button>
                           </div>
                         )}
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-zinc-300">
-                          Título desta Caixa
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium text-slate-300">
+                          Título da etapa
                         </label>
                         <Input
                           value={selectedNode.title}
@@ -1855,53 +1869,51 @@ export function AutomationsStudio({
                       {selectedNode.kind === "trigger" && (
                         <>
                           <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-zinc-300">
-                              Quando disparar?
+                            <label className="text-[11px] font-medium text-slate-300">
+                              Evento de origem
                             </label>
                             <select
                               value={triggerType}
                               onChange={(e) => setTriggerType(e.target.value as TriggerType)}
-                              className="h-10 w-full rounded-xl border border-white/15 bg-[#181b26] px-3 text-xs font-semibold text-white"
+                              className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs text-slate-100"
                             >
-                              <option value="comment">💬 Comentário em um Reel ou Post</option>
-                              <option value="dm">📩 Mensagem enviada no Direct (DM)</option>
-                              <option value="any">⚡ Ambos (Comentário + Direct + Story)</option>
+                              <option value="comment">Comentário em Reel ou publicação</option>
+                              <option value="dm">Mensagem recebida no Direct</option>
+                              <option value="any">Comentário, Direct ou resposta de Story</option>
                             </select>
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-zinc-300">
-                              Regra das palavras-chave
+                            <label className="text-[11px] font-medium text-slate-300">
+                              Critério de correspondência
                             </label>
                             <select
                               value={matchMode}
                               onChange={(e) => setMatchMode(e.target.value as MatchMode)}
-                              className="h-10 w-full rounded-xl border border-white/15 bg-[#181b26] px-3 text-xs font-semibold text-white"
+                              className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs text-slate-100"
                             >
-                              <option value="contains">Contém a palavra-chave</option>
-                              <option value="exact">Exatamente igual à palavra-chave</option>
-                              <option value="any_comment">
-                                Qualquer comentário ou mensagem
-                              </option>
+                              <option value="contains">Contém qualquer palavra-chave</option>
+                              <option value="exact">Correspondência exata</option>
+                              <option value="any_comment">Qualquer comentário ou mensagem</option>
                             </select>
                           </div>
 
                           {matchMode !== "any_comment" && (
                             <div className="space-y-2">
-                              <label className="text-xs font-medium text-zinc-300">
-                                Palavras-chave ativas:
+                              <label className="text-[11px] font-medium text-slate-300">
+                                Palavras-chave monitoradas
                               </label>
                               <div className="flex flex-wrap gap-1.5">
                                 {parsedKeywords.map((kw) => (
                                   <span
                                     key={kw}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-pink-500/40 bg-pink-500/20 px-2.5 py-1 font-mono text-xs font-bold text-pink-200"
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.1] bg-[#171A24] px-2 py-0.5 font-mono text-[11px] text-slate-200"
                                   >
                                     {kw}
                                     <button
                                       type="button"
                                       onClick={() => removeKeywordChip(kw)}
-                                      className="text-pink-300 hover:text-white"
+                                      className="text-slate-400 hover:text-white"
                                     >
                                       ×
                                     </button>
@@ -1918,11 +1930,15 @@ export function AutomationsStudio({
                                       addKeywordChip();
                                     }
                                   }}
-                                  placeholder="Ex.: EU QUERO"
+                                  placeholder="Adicionar termo (ex.: ACESSO)"
                                 />
-                                <Button type="button" variant="outline" onClick={addKeywordChip}>
-                                  + Adicionar
-                                </Button>
+                                <button
+                                  type="button"
+                                  onClick={addKeywordChip}
+                                  className="shrink-0 rounded-lg border border-white/[0.1] bg-[#171A24] px-3 text-xs font-medium text-slate-200 hover:bg-white/[0.08]"
+                                >
+                                  Incluir
+                                </button>
                               </div>
                             </div>
                           )}
@@ -1931,10 +1947,10 @@ export function AutomationsStudio({
 
                       {selectedNode.kind !== "trigger" && (
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-zinc-300">
+                          <label className="text-[11px] font-medium text-slate-300">
                             {selectedNode.kind === "comment_reply"
-                              ? "Frases de resposta no comentário (uma por linha):"
-                              : "Mensagem / Texto desta caixa (use {nome} e {conta}):"}
+                              ? "Respostas rotativas (uma por linha)"
+                              : "Conteúdo da mensagem (variáveis: {nome}, {conta})"}
                           </label>
                           <textarea
                             rows={4}
@@ -1942,7 +1958,7 @@ export function AutomationsStudio({
                             onChange={(e) =>
                               updateNode(selectedNode.id, { text: e.target.value })
                             }
-                            className="w-full rounded-xl border border-white/15 bg-[#181b26] p-3 text-xs text-white focus:border-pink-400 focus:outline-none leading-relaxed"
+                            className="w-full rounded-lg border border-white/[0.09] bg-[#171A24] p-3 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none leading-relaxed"
                           />
                         </div>
                       )}
@@ -1950,23 +1966,23 @@ export function AutomationsStudio({
                       {(selectedNode.kind === "dm_message" ||
                         selectedNode.kind === "follow_gate") && (
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-zinc-300">
-                            Texto do Botão:
+                          <label className="text-[11px] font-medium text-slate-300">
+                            Rótulo do botão de ação
                           </label>
                           <Input
                             value={selectedNode.buttonTitle ?? ""}
                             onChange={(e) =>
                               updateNode(selectedNode.id, { buttonTitle: e.target.value })
                             }
-                            placeholder="Ex.: Abrir Acesso Exclusivo 🚀"
+                            placeholder="Ex.: Acessar conteúdo"
                           />
                         </div>
                       )}
 
                       {selectedNode.kind === "dm_message" && (
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-zinc-300">
-                            Link (URL) do Botão (opcional):
+                          <label className="text-[11px] font-medium text-slate-300">
+                            URL de destino
                           </label>
                           <Input
                             value={selectedNode.buttonUrl ?? ""}
@@ -1980,8 +1996,8 @@ export function AutomationsStudio({
 
                       {selectedNode.kind === "lead_capture" && (
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-zinc-300">
-                            Qual dado salvar no CRM?
+                          <label className="text-[11px] font-medium text-slate-300">
+                            Campo armazenado no CRM
                           </label>
                           <select
                             value={selectedNode.leadField ?? "whatsapp"}
@@ -1990,20 +2006,20 @@ export function AutomationsStudio({
                                 leadField: e.target.value as CustomFlowNode["leadField"],
                               })
                             }
-                            className="h-10 w-full rounded-xl border border-white/15 bg-[#181b26] px-3 text-xs font-semibold text-white"
+                            className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs text-slate-100"
                           >
-                            <option value="whatsapp">📱 WhatsApp com DDD</option>
-                            <option value="email">📧 E-mail</option>
-                            <option value="name">👤 Nome do Cliente</option>
-                            <option value="custom">💬 Resposta Livre</option>
+                            <option value="whatsapp">Telefone / WhatsApp</option>
+                            <option value="email">Endereço de e-mail</option>
+                            <option value="name">Nome completo</option>
+                            <option value="custom">Resposta aberta</option>
                           </select>
                         </div>
                       )}
 
                       {selectedNode.kind === "delay" && (
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-zinc-300">
-                            Tempo de espera (em segundos):
+                          <label className="text-[11px] font-medium text-slate-300">
+                            Tempo de espera (segundos)
                           </label>
                           <Input
                             type="number"
@@ -2021,8 +2037,8 @@ export function AutomationsStudio({
 
                       {selectedNode.kind === "tag_crm" && (
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-zinc-300">
-                            Nome da Etiqueta (Tag no CRM):
+                          <label className="text-[11px] font-medium text-slate-300">
+                            Identificador da etiqueta
                           </label>
                           <Input
                             value={selectedNode.tagName ?? ""}
@@ -2031,22 +2047,22 @@ export function AutomationsStudio({
                                 tagName: e.target.value.toUpperCase(),
                               })
                             }
-                            placeholder="Ex.: VIP_INTERESSADO"
+                            placeholder="QUALIFICADO"
                           />
                         </div>
                       )}
 
-                      {/* CONEXÃO: ESCOLHER PARA QUAL CAIXA ESTA CAIXA VAI (ALÉM DE ARRASTAR COM O MOUSE) */}
-                      <div className="border-t border-white/10 pt-3 space-y-2.5">
-                        <p className="text-[11px] font-bold uppercase tracking-wider text-pink-300">
-                          🔗 Conexão desta Caixa (Próximo Passo):
+                      {/* Roteamento de Saída */}
+                      <div className="border-t border-white/[0.06] pt-3 space-y-2.5">
+                        <p className="text-[11px] font-medium text-slate-400">
+                          Encaminhamento de saída
                         </p>
 
                         {selectedNode.kind === "follow_gate" ? (
                           <>
                             <div className="space-y-1">
-                              <label className="text-xs text-emerald-300 font-semibold">
-                                Saída 1 (✓ SIM, Já Segue) → Vai para:
+                              <label className="text-[11px] text-emerald-400">
+                                Se seguir a conta →
                               </label>
                               <select
                                 value={
@@ -2058,22 +2074,22 @@ export function AutomationsStudio({
                                 onChange={(e) =>
                                   connectNodes(selectedNode.id, "yes", e.target.value)
                                 }
-                                className="h-9 w-full rounded-xl border border-emerald-500/40 bg-[#181b26] px-3 text-xs text-white"
+                                className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs text-slate-100"
                               >
-                                <option value="">— Nenhuma (Desconectado) —</option>
+                                <option value="">Finalizar fluxo</option>
                                 {nodes
                                   .filter((n) => n.id !== selectedNode.id && n.kind !== "trigger")
                                   .map((n) => (
                                     <option key={n.id} value={n.id}>
-                                      {NODE_KIND_META[n.kind].icon} {n.title}
+                                      {n.title}
                                     </option>
                                   ))}
                               </select>
                             </div>
 
                             <div className="space-y-1">
-                              <label className="text-xs text-amber-300 font-semibold">
-                                Saída 2 (✕ NÃO Segue) → Vai para:
+                              <label className="text-[11px] text-amber-400">
+                                Se não seguir →
                               </label>
                               <select
                                 value={
@@ -2085,14 +2101,14 @@ export function AutomationsStudio({
                                 onChange={(e) =>
                                   connectNodes(selectedNode.id, "no", e.target.value)
                                 }
-                                className="h-9 w-full rounded-xl border border-amber-500/40 bg-[#181b26] px-3 text-xs text-white"
+                                className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs text-slate-100"
                               >
-                                <option value="">— Nenhuma (Desconectado) —</option>
+                                <option value="">Finalizar fluxo</option>
                                 {nodes
                                   .filter((n) => n.id !== selectedNode.id && n.kind !== "trigger")
                                   .map((n) => (
                                     <option key={n.id} value={n.id}>
-                                      {NODE_KIND_META[n.kind].icon} {n.title}
+                                      {n.title}
                                     </option>
                                   ))}
                               </select>
@@ -2100,8 +2116,8 @@ export function AutomationsStudio({
                           </>
                         ) : (
                           <div className="space-y-1">
-                            <label className="text-xs text-zinc-300">
-                              Ao terminar esta caixa → Ir para:
+                            <label className="text-[11px] text-slate-400">
+                              Próxima etapa conectada
                             </label>
                             <select
                               value={
@@ -2113,14 +2129,14 @@ export function AutomationsStudio({
                               onChange={(e) =>
                                 connectNodes(selectedNode.id, "out", e.target.value)
                               }
-                              className="h-9 w-full rounded-xl border border-white/15 bg-[#181b26] px-3 text-xs text-white"
+                              className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs text-slate-100"
                             >
-                              <option value="">— Fim do Fluxo (Sem próxima caixa) —</option>
+                              <option value="">Finalizar fluxo</option>
                               {nodes
                                 .filter((n) => n.id !== selectedNode.id && n.kind !== "trigger")
                                 .map((n) => (
                                   <option key={n.id} value={n.id}>
-                                    {NODE_KIND_META[n.kind].icon} {n.title}
+                                    {n.title}
                                   </option>
                                 ))}
                             </select>
@@ -2131,86 +2147,85 @@ export function AutomationsStudio({
                   </div>
                 )}
 
-                {/* MODO 2: SIMULADOR AO VIVO */}
+                {/* MODO 2: SIMULADOR */}
                 {drawerMode === "simulator" && (
                   <div className="space-y-4">
-                    <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-3.5">
+                    <div className="space-y-3 rounded-xl border border-white/[0.08] bg-[#0D0F16] p-3.5">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <label className="text-[11px] text-zinc-400">Cliente simulado</label>
+                          <label className="text-[11px] text-slate-400">Usuário de teste</label>
                           <Input
                             value={simUsername}
                             onChange={(e) => setSimUsername(e.target.value)}
-                            className="h-9 text-xs"
+                            className="h-8 text-xs"
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[11px] text-zinc-400">Comentário no Reel</label>
+                          <label className="text-[11px] text-slate-400">Mensagem enviada</label>
                           <Input
                             value={simCommentText}
                             onChange={(e) => setSimCommentText(e.target.value)}
-                            className="h-9 text-xs"
+                            className="h-8 text-xs"
                           />
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#181b26] p-2.5">
-                        <span className="text-xs font-medium text-zinc-200">
-                          Status do cliente no teste:
-                        </span>
+                      <div className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-[#171A24] px-3 py-2">
+                        <span className="text-xs text-slate-300">Relação com o perfil</span>
                         <button
                           type="button"
                           onClick={() => setSimIsFollowing((v) => !v)}
-                          className={`rounded-lg px-3 py-1 text-xs font-bold transition ${
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition ${
                             simIsFollowing
-                              ? "border border-emerald-400 bg-emerald-500/20 text-emerald-300"
-                              : "border border-amber-400 bg-amber-500/20 text-amber-300"
+                              ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                              : "border border-amber-500/40 bg-amber-500/15 text-amber-300"
                           }`}
                         >
-                          {simIsFollowing ? "✅ JÁ SEGUE" : "❌ NÃO SEGUE"}
+                          {simIsFollowing ? "Segue a conta" : "Não segue"}
                         </button>
                       </div>
 
-                      <Button
+                      <button
                         type="button"
-                        className="w-full"
                         disabled={busySim}
                         onClick={() => handleRunSimulation("trigger")}
+                        className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
                       >
-                        {busySim ? <Spinner /> : "▶"} Testar Comentário "{simCommentText}"
-                      </Button>
+                        {busySim && <Spinner />}
+                        Executar teste de gatilho
+                      </button>
                     </div>
 
-                    <div className="min-h-[22rem] max-h-[28rem] space-y-2.5 overflow-y-auto rounded-2xl border border-white/10 bg-black/80 p-3.5">
+                    <div className="min-h-[22rem] max-h-[28rem] space-y-2.5 overflow-y-auto rounded-xl border border-white/[0.08] bg-[#090A0F] p-3.5">
                       {simFeed.length === 0 ? (
-                        <div className="flex h-60 flex-col items-center justify-center text-center text-xs text-zinc-400">
-                          <p className="font-semibold text-white">Simulador Interativo Pronto</p>
-                          <p className="mt-1">
-                            Clique no botão acima para ver seu fluxo responder em tempo real!
+                        <div className="flex h-56 flex-col items-center justify-center text-center text-xs text-slate-500">
+                          <p className="font-medium text-slate-300">Nenhuma execução iniciada</p>
+                          <p className="mt-1 max-w-xs">
+                            Inicie o teste acima para inspecionar as respostas de comentário, validação de seguidor e entrega no Direct.
                           </p>
                         </div>
                       ) : (
                         simFeed.map((msg, i) => (
                           <div
                             key={i}
-                            className={`rounded-xl p-3 text-xs ${
+                            className={`rounded-lg p-3 text-xs ${
                               msg.sender === "user_comment"
-                                ? "border border-white/15 bg-white/10 text-white"
+                                ? "border border-white/[0.08] bg-[#141722] text-slate-200"
                                 : msg.sender === "bot_comment"
-                                  ? "ml-3 border border-indigo-400/40 bg-indigo-500/20 text-indigo-100"
+                                  ? "ml-3 border border-sky-500/30 bg-sky-500/10 text-sky-100"
                                   : msg.sender === "user_dm"
-                                    ? "ml-8 bg-pink-600 text-white"
-                                    : "mr-4 border border-white/15 bg-[#181b26] text-zinc-100"
+                                    ? "ml-8 bg-indigo-600 text-white"
+                                    : "mr-4 border border-white/[0.08] bg-[#171A24] text-slate-200"
                             }`}
                           >
-                            <p className="mb-1 text-[10px] font-bold uppercase opacity-75">
+                            <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400">
                               {msg.sender === "user_comment"
-                                ? "💬 Comentário no Reel"
+                                ? "Comentário recebido"
                                 : msg.sender === "bot_comment"
-                                  ? "🤖 Resposta no Comentário"
+                                  ? "Resposta pública"
                                   : msg.sender === "user_dm"
-                                    ? `📩 @${simUsername}`
-                                    : "📩 Direct Automático"}
+                                    ? `@${simUsername}`
+                                    : "Direct enviado"}
                             </p>
                             <p className="whitespace-pre-line leading-relaxed">{msg.text}</p>
                             {msg.quickReplyLabel && (
@@ -2218,9 +2233,9 @@ export function AutomationsStudio({
                                 type="button"
                                 disabled={busySim}
                                 onClick={() => handleRunSimulation("check_follow")}
-                                className="mt-2.5 w-full rounded-lg border border-emerald-400/50 bg-emerald-500/20 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/30"
+                                className="mt-2.5 w-full rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/25"
                               >
-                                {msg.quickReplyLabel} (Testar clique)
+                                {msg.quickReplyLabel}
                               </button>
                             )}
                             {msg.buttonUrl && (
@@ -2228,9 +2243,9 @@ export function AutomationsStudio({
                                 href={msg.buttonUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="mt-2.5 block w-full rounded-lg bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-3 py-2 text-center text-xs font-bold text-white"
+                                className="mt-2.5 block w-full rounded-md bg-indigo-600 px-3 py-1.5 text-center text-xs font-medium text-white hover:bg-indigo-500"
                               >
-                                {msg.buttonTitle || "Abrir Link 🚀"} ↗
+                                {msg.buttonTitle || "Abrir link"} ↗
                               </a>
                             )}
                           </div>
@@ -2242,31 +2257,32 @@ export function AutomationsStudio({
                           <Input
                             value={simLeadInput}
                             onChange={(e) => setSimLeadInput(e.target.value)}
-                            className="h-9 text-xs"
+                            className="h-8 text-xs"
                           />
-                          <Button
-                            size="sm"
+                          <button
+                            type="button"
                             disabled={busySim}
                             onClick={() => handleRunSimulation("submit_lead")}
+                            className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white"
                           >
                             Enviar
-                          </Button>
+                          </button>
                         </div>
                       )}
                     </div>
                   </div>
                 )}
 
-                {/* MODO 3: CRM DE LEADS E INTERAÇÕES */}
+                {/* MODO 3: CRM E WEBHOOK */}
                 {drawerMode === "crm" && (
                   <div className="space-y-3">
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-zinc-300">
-                      <p className="font-semibold text-white">🔗 Webhook Oficial Meta</p>
-                      <p className="mt-1 font-mono text-[11px] text-pink-300 break-all">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0D0F16] p-3 text-xs">
+                      <p className="font-medium text-slate-200">Endpoint Webhook Meta</p>
+                      <p className="mt-1 font-mono text-[11px] text-indigo-300 break-all">
                         {webhookUrl}
                       </p>
-                      <p className="mt-0.5 text-[11px] text-zinc-400">
-                        Verify Token: <code>mercatta_mix_webhook_2026</code>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Token de verificação: <code className="font-mono text-slate-300">mercatta_mix_webhook_2026</code>
                       </p>
                     </div>
 
@@ -2274,23 +2290,28 @@ export function AutomationsStudio({
                       {initialSessions.map((s) => (
                         <div
                           key={s.id}
-                          className="rounded-xl border border-white/10 bg-[#181b26] p-3 text-xs space-y-1.5"
+                          className="rounded-xl border border-white/[0.07] bg-[#0D0F16] p-3 text-xs space-y-1"
                         >
                           <div className="flex items-center justify-between">
-                            <strong className="text-white">
+                            <span className="font-mono font-medium text-slate-200">
                               @{s.igUsername || s.igSenderId}
-                            </strong>
-                            <Badge tone={s.stage === "delivered" ? "success" : "warn"}>
-                              {s.stage === "delivered" ? "Entregue ✓" : "Na Trava"}
-                            </Badge>
+                            </span>
+                            <span
+                              className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                                s.stage === "delivered"
+                                  ? "bg-emerald-500/15 text-emerald-300"
+                                  : "bg-amber-500/15 text-amber-300"
+                              }`}
+                            >
+                              {s.stage === "delivered" ? "Concluído" : "Aguardando"}
+                            </span>
                           </div>
-                          <p className="text-zinc-400">
-                            Comentou:{" "}
-                            <span className="font-mono text-zinc-200">{s.triggerText}</span>
+                          <p className="text-slate-400">
+                            Interação: <span className="font-mono text-slate-300">{s.triggerText}</span>
                           </p>
                           {(s.leadWhatsapp || s.leadEmail) && (
-                            <p className="font-mono text-emerald-300">
-                              📞 Lead: {s.leadWhatsapp || s.leadEmail}
+                            <p className="font-mono text-emerald-400">
+                              Contato: {s.leadWhatsapp || s.leadEmail}
                             </p>
                           )}
                         </div>
@@ -2304,9 +2325,10 @@ export function AutomationsStudio({
                 type="button"
                 disabled={busySave}
                 onClick={handleSaveAutomation}
-                className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-pink-500 to-purple-600 px-4 font-display text-xs font-bold text-white shadow-lg transition hover:opacity-95 disabled:opacity-50"
+                className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-50"
               >
-                {busySave ? <Spinner /> : "💾"} Salvar e Publicar Fluxo
+                {busySave && <Spinner />}
+                Salvar e publicar alterações
               </button>
             </aside>
           </div>
