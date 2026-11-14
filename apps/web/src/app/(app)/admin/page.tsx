@@ -56,6 +56,21 @@ export default async function AdminPage() {
             Configurar preços
           </Link>
         </Card>
+
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4 sm:col-span-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-medium">Infraestrutura Profissional (PostgreSQL + Cloudflare R2)</p>
+              <Badge tone="success">Postgres 16 Ativo</Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Para não ocupar o disco local do Mac com vídeos renderizados, aponte <code>DATABASE_URL</code> para seu Postgres gerenciado (Neon / Supabase em modo Session / VPS Coolify) e <code>STORAGE_DRIVER=r2</code> com seu bucket Cloudflare R2 no arquivo <code>.env</code>.
+            </p>
+          </div>
+          <Link href="/instagram" className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium transition hover:bg-surface-2">
+            Fila do Instagram
+          </Link>
+        </Card>
       </div>
 
       <AdminForms orgs={rows.map((o) => ({ id: o.id, name: o.name }))} />

@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -123,7 +123,7 @@ export async function renderVariation(input: RenderVariationInput): Promise<void
     outPath: outName,
   });
   await run(FFMPEG, args, { cwd: input.workDir });
-  await copyFile(path.join(input.workDir, outName), input.outFile);
+  await rename(path.join(input.workDir, outName), input.outFile);
 }
 
 /** O FFmpeg local tem o filtro `ass` (libass)? */

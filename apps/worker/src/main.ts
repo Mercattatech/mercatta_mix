@@ -6,6 +6,7 @@ import type { WorkerDeps } from "./deps";
 import { renderCombination } from "./handlers/render";
 import { processSource } from "./handlers/process-source";
 import { buildZip } from "./handlers/zip";
+import { publishToInstagram } from "./handlers/publish";
 import { LocalObjectStore, R2ObjectStore, type ObjectStore } from "./store";
 import { FasterWhisperTranscriber, OpenAiWhisperTranscriber, type Transcriber } from "./transcriber";
 import { hasAssFilter } from "./media";
@@ -38,6 +39,7 @@ async function main() {
   await queue.work(QUEUES.processSource, (p, ctx) => processSource(deps, p, ctx), { concurrency: cfg.WORKER_CONCURRENCY });
   await queue.work(QUEUES.render, (p, ctx) => renderCombination(deps, p, ctx), { concurrency: cfg.WORKER_CONCURRENCY });
   await queue.work(QUEUES.zip, (p, ctx) => buildZip(deps, p, ctx), { concurrency: 1 });
+  await queue.work(QUEUES.publish, (p, ctx) => publishToInstagram(deps, p, ctx), { concurrency: 1 });
   console.log(JSON.stringify({ msg: "worker.started", storage: cfg.STORAGE_DRIVER, transcriber: `${transcriber.provider}:${transcriber.model}`, concurrency: cfg.WORKER_CONCURRENCY }));
 
   let stopping = false;

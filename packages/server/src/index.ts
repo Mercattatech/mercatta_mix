@@ -9,3 +9,4 @@ export * from "./queue";
 export * from "./uploads";
 export * from "./auth";
 export * from "./mail-settings";
+export * from "./instagram";

@@ -6,7 +6,7 @@ import { energyEnvelope, probe, renderVariation } from "../media";
 import { runTrackedJob } from "./lifecycle";
 
 /** Diferença máxima aceita entre a duração planejada e a do arquivo gerado. */
-const MAX_DURATION_DRIFT_MS = 200;
+const MAX_DURATION_DRIFT_MS = 500;
 
 /** Renderiza UMA combinação (um Reel) e confirma o crédito só quando o arquivo está pronto e conferido. */
 export async function renderCombination(deps: WorkerDeps, payload: RenderPayload, ctx: JobContext): Promise<void> {

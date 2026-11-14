@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </Link>
           <nav aria-label="Principal" className="ml-2 hidden items-center gap-1 sm:flex">
             <NavLink href="/projects">Projetos</NavLink>
+            <NavLink href="/instagram">Instagram</NavLink>
             <NavLink href="/team">Equipe</NavLink>
             {ctx.isAdmin && <NavLink href="/admin">Admin</NavLink>}
           </nav>
@@ -36,6 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
         <nav aria-label="Principal (celular)" className="flex gap-1 overflow-x-auto border-t border-border px-4 py-1.5 sm:hidden">
           <NavLink href="/projects">Projetos</NavLink>
+          <NavLink href="/instagram">Instagram</NavLink>
           <NavLink href="/team">Equipe</NavLink>
           {ctx.isAdmin && <NavLink href="/admin">Admin</NavLink>}
         </nav>

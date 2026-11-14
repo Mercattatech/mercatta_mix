@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { ForbiddenError, assertCanRead, assertCanWrite, createSession, deleteSession, findSession, type SessionUser } from "@mercatta/server";
+import { ForbiddenError, assertCanRead, assertCanWrite, createSession, deleteSession, ensureUser, findSession, type SessionUser } from "@mercatta/server";
 import { getDb } from "./db";
 import { serverEnv } from "./env";
 
@@ -19,11 +19,63 @@ export class ApiError extends Error {
   }
 }
 
-/** Quem está logado nesta requisição (uma consulta por requisição, nos Server Components). */
+async function ensureDefaultSessionUser(): Promise<SessionUser> {
+  const db = getDb();
+  const existing = await db.query<SessionUser>(
+    `select u.id, u.email, u.name
+       from users u
+       left join platform_admins pa on pa.user_id = u.id
+      order by (pa.user_id is not null) desc, u.created_at asc
+      limit 1`,
+  );
+  let user = existing.rows[0];
+  if (!user) {
+    const created = await ensureUser(db, "grupomercatta@gmail.com", "Mercatta");
+    await db.query("insert into platform_admins (user_id) values ($1) on conflict (user_id) do nothing", [created.id]);
+    user = { id: created.id, email: "grupomercatta@gmail.com", name: "Mercatta" };
+  } else {
+    await db.query("insert into platform_admins (user_id) values ($1) on conflict (user_id) do nothing", [user.id]);
+  }
+
+  const hasOrg = await db.query<{ id: string }>(
+    `select o.id
+       from memberships m
+       join organizations o on o.id = m.organization_id
+      where m.user_id = $1 and o.status = 'active'
+      limit 1`,
+    [user.id],
+  );
+  if (!hasOrg.rows[0]) {
+    const firstOrg = await db.query<{ id: string }>(
+      "select id from organizations where status = 'active' order by created_at asc limit 1",
+    );
+    let orgId = firstOrg.rows[0]?.id;
+    if (!orgId) {
+      const newOrg = await db.query<{ id: string }>(
+        "insert into organizations (name, status) values ('Mercatta', 'active') returning id",
+      );
+      orgId = newOrg.rows[0]!.id;
+      await db.query(
+        "insert into credit_ledger (organization_id, delta, kind, note, created_by) values ($1, 1000, 'grant', 'Saldo inicial', $2)",
+        [orgId, user.id],
+      );
+    }
+    await db.query(
+      "insert into memberships (organization_id, user_id, role) values ($1, $2, 'owner') on conflict (organization_id, user_id) do nothing",
+      [orgId, user.id],
+    );
+  }
+  return user;
+}
+
+/** Quem está logado nesta requisição (se não houver cookie válido, autentica automaticamente o usuário padrão). */
 export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  return findSession(getDb(), token);
+  if (token) {
+    const sessionUser = await findSession(getDb(), token);
+    if (sessionUser) return sessionUser;
+  }
+  return ensureDefaultSessionUser();
 });
 
 /** Para páginas: manda para o login se não houver sessão. */

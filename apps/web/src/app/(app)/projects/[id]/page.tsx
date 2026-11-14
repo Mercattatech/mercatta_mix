@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ForbiddenError, assertCanRead, assertCanWrite, ensureDefaultSegments, getPricingConfig } from "@mercatta/server";
+import { ForbiddenError, assertCanRead, assertCanWrite, ensureDefaultSegments, getPricingConfig, listInstagramAccounts, listSocialSchedules } from "@mercatta/server";
 import { Alert, Badge } from "@/components/ui";
 import { getAppContext } from "@/lib/context";
 import { getDb } from "@/lib/db";
 import { CombinePanel } from "./combine-panel";
+import { InstagramSchedulePanel } from "./instagram-schedule-panel";
 import { LiveRefresh } from "./live-refresh";
 import { ResultsPanel } from "./results-panel";
 import { SegmentEditor } from "./segment-editor";
@@ -44,7 +45,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
   await ensureDefaultSegments(db, project.organization_id, id);
 
-  const [videosRes, segmentsRes, combosRes, rendersRes, jobsRes, balanceRes, pricing] = await Promise.all([
+  const [videosRes, segmentsRes, combosRes, rendersRes, jobsRes, balanceRes, pricing, igAccounts, igSchedules] = await Promise.all([
     db.query<VideoRow>("select id, type, original_filename, status, error_pt, duration_ms, sort_order from source_videos where project_id = $1 order by sort_order, created_at", [id]),
     db.query<SegmentRow>("select id, source_video_id, type, start_word_idx, end_word_idx, start_ms, end_ms, label from segments where project_id = $1 order by sort_order, created_at", [id]),
     db.query<{ id: string; code: string }>("select id, code from combinations where project_id = $1", [id]),
@@ -63,6 +64,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     ),
     db.query<{ b: string }>("select credit_balance($1) as b", [project.organization_id]),
     getPricingConfig(db),
+    listInstagramAccounts(db, project.organization_id),
+    listSocialSchedules(db, project.organization_id, id),
   ]);
 
   const videos = videosRes.rows;
@@ -113,6 +116,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         pricing={pricing}
       />
       <ResultsPanel projectId={id} renders={renders} jobs={jobs} />
+      <InstagramSchedulePanel
+        projectId={id}
+        projectName={project.name}
+        renders={renders}
+        initialAccounts={igAccounts}
+        initialSchedules={igSchedules}
+        canWrite={canWrite}
+      />
     </div>
   );
 }

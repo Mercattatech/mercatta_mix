@@ -86,7 +86,7 @@ export function buildRenderArgs(input: RenderArgsInput): string[] {
   } else if (overlaySubIdx >= 0) {
     chains.push(`[vcat]scale=${width}:${height}[vscaled]`);
     chains.push(`[${overlaySubIdx}:v]fps=${timeline.fps},format=rgba[vsub]`);
-    chains.push(`[vscaled][vsub]overlay=0:0:eof_action=pass[vout]`);
+    chains.push(`[vscaled][vsub]overlay=0:0:eof_action=pass:shortest=1[vout]`);
     videoLabel = "vout";
   }
 

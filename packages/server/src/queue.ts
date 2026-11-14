@@ -7,21 +7,25 @@ export const QUEUES = {
   processSource: "source-process",
   render: "render-run",
   zip: "zip-build",
+  publish: "instagram-publish",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
 export const processSourcePayload = z.object({ organizationId: id, jobId: id, sourceVideoId: id, language: z.string().min(2).max(8).default("pt") });
 export const renderPayload = z.object({ organizationId: id, jobId: id, renderId: id });
 export const zipPayload = z.object({ organizationId: id, jobId: id, projectId: id, renderIds: z.array(id).min(1) });
+export const publishPayload = z.object({ organizationId: id, jobId: id, scheduleId: id });
 
 export type ProcessSourcePayload = z.infer<typeof processSourcePayload>;
 export type RenderPayload = z.infer<typeof renderPayload>;
 export type ZipPayload = z.infer<typeof zipPayload>;
+export type PublishPayload = z.infer<typeof publishPayload>;
 
 export const PAYLOAD_SCHEMAS = {
   [QUEUES.processSource]: processSourcePayload,
   [QUEUES.render]: renderPayload,
   [QUEUES.zip]: zipPayload,
+  [QUEUES.publish]: publishPayload,
 } as const;
 
 /** Tentativas automáticas em falhas temporárias (além da primeira). */
@@ -31,6 +35,7 @@ const QUEUE_OPTIONS: Record<QueueName, { expireInSeconds: number }> = {
   [QUEUES.processSource]: { expireInSeconds: 30 * 60 },
   [QUEUES.render]: { expireInSeconds: 20 * 60 },
   [QUEUES.zip]: { expireInSeconds: 30 * 60 },
+  [QUEUES.publish]: { expireInSeconds: 20 * 60 },
 };
 
 export interface JobContext {
@@ -73,9 +78,13 @@ export class JobQueue {
   }
 
   /** `singletonKey` = id do job: publicar duas vezes o mesmo job não duplica o trabalho. */
-  async publish<Q extends QueueName>(name: Q, payload: z.input<(typeof PAYLOAD_SCHEMAS)[Q]>, opts: { priority?: number } = {}): Promise<void> {
+  async publish<Q extends QueueName>(name: Q, payload: z.input<(typeof PAYLOAD_SCHEMAS)[Q]>, opts: { priority?: number; startAfter?: Date | string } = {}): Promise<void> {
     const data = PAYLOAD_SCHEMAS[name].parse(payload) as { jobId: string };
-    await this.boss.send(name, data, { priority: opts.priority ?? 0, singletonKey: data.jobId });
+    await this.boss.send(name, data, {
+      priority: opts.priority ?? 0,
+      singletonKey: data.jobId,
+      ...(opts.startAfter ? { startAfter: opts.startAfter } : {}),
+    });
   }
 
   async work<Q extends QueueName>(
