@@ -10,3 +10,4 @@ export * from "./uploads";
 export * from "./auth";
 export * from "./mail-settings";
 export * from "./instagram";
+export * from "./instagram-automations";

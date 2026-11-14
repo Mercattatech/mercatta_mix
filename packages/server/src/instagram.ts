@@ -79,7 +79,8 @@ export function buildInstagramOAuthUrl(config: InstagramOAuthConfig, redirectUri
     display: "popup",
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management",
+    scope:
+      "instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_messages,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging,business_management",
     state,
   });
   if (config.configId && config.configId !== DEFAULT_META_CONFIG_ID) {

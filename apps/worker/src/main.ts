@@ -1,6 +1,6 @@
 import path from "node:path";
 import pg from "pg";
-import { fromPgPool, JobQueue, QUEUES } from "@mercatta/server";
+import { fromPgPool, JobQueue, QUEUES, syncAndReplyRecentInstagramComments } from "@mercatta/server";
 import { loadConfig } from "./config";
 import type { WorkerDeps } from "./deps";
 import { renderCombination } from "./handlers/render";
@@ -42,10 +42,30 @@ async function main() {
   await queue.work(QUEUES.publish, (p, ctx) => publishToInstagram(deps, p, ctx), { concurrency: 1 });
   console.log(JSON.stringify({ msg: "worker.started", storage: cfg.STORAGE_DRIVER, transcriber: `${transcriber.provider}:${transcriber.model}`, concurrency: cfg.WORKER_CONCURRENCY }));
 
+  const commentSyncTimer = setInterval(async () => {
+    try {
+      const orgs = await deps.db.query<{ organization_id: string }>(
+        "select distinct organization_id from instagram_automations where status = 'active'",
+      );
+      for (const o of orgs.rows) {
+        const res = await syncAndReplyRecentInstagramComments(deps.db, {
+          organizationId: o.organization_id,
+          ...(process.env.SETTINGS_ENCRYPTION_KEY ? { encryptionKeyRaw: process.env.SETTINGS_ENCRYPTION_KEY } : {}),
+        });
+        if (res.triggeredCount > 0) {
+          console.log(JSON.stringify({ msg: "instagram.automation.synced", organizationId: o.organization_id, ...res }));
+        }
+      }
+    } catch {
+      // ignora falha transitória de rede na varredura periódica
+    }
+  }, 45_000);
+
   let stopping = false;
   const shutdown = async (signal: string) => {
     if (stopping) return;
     stopping = true;
+    clearInterval(commentSyncTimer);
     console.log(JSON.stringify({ msg: "worker.stopping", signal }));
     await queue.stop();
     await pool.end();
