@@ -11,12 +11,10 @@ export async function GET(req: Request) {
   const db = getDb();
   const config = await getInstagramOAuthConfig(db);
 
-  if (!config) {
-    return NextResponse.redirect(new URL(`/instagram/connect?returnTo=${encodeURIComponent(returnTo)}`, req.url), 302);
-  }
-
-  const redirectUri = `${serverEnv().APP_URL.replace(/\/$/, "")}/api/instagram/oauth/callback`;
+  const base = (process.env.META_REDIRECT_BASE || serverEnv().APP_URL || url.origin).replace(/\/$/, "");
+  const redirectUri = `${base}/api/instagram/oauth/callback`;
   const state = Buffer.from(JSON.stringify({ returnTo }), "utf8").toString("base64url");
+
   return NextResponse.redirect(buildInstagramOAuthUrl(config, redirectUri, state), 302);
 }
 
@@ -24,12 +22,12 @@ export function POST(req: Request) {
   return handle(async () => {
     const ctx = await getAppContext();
     if (!ctx.isAdmin) throw new Error("Apenas administradores podem configurar o App OAuth da Meta.");
-    const body = (await req.json()) as { appId?: string; appSecret?: string };
+    const body = (await req.json()) as { appId?: string; appSecret?: string; configId?: string };
     await saveInstagramOAuthConfig(getDb(), {
-      appId: body.appId ?? "",
+      appId: body.appId ?? "24795114410148961",
       appSecret: body.appSecret ?? "",
+      ...(body.configId ? { configId: body.configId } : {}),
     });
     return { ok: true };
   });
 }
-

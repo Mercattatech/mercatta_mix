@@ -35,20 +35,24 @@ export interface InstagramOAuthConfig {
   configId?: string;
 }
 
-export async function getInstagramOAuthConfig(sql: Sql): Promise<InstagramOAuthConfig | null> {
+export const DEFAULT_META_CLIENT_ID = "24795114410148961";
+export const DEFAULT_META_CONFIG_ID = "1716691300162736";
+
+export async function getInstagramOAuthConfig(sql: Sql): Promise<InstagramOAuthConfig> {
   const envId = process.env.META_APP_ID?.trim() || process.env.INSTAGRAM_APP_ID?.trim();
   const envSecret = process.env.META_APP_SECRET?.trim() || process.env.INSTAGRAM_APP_SECRET?.trim();
-  const envConfigId = process.env.META_CONFIG_ID?.trim() || "1716691300162736";
+  const envConfigId = process.env.META_CONFIG_ID?.trim() || DEFAULT_META_CONFIG_ID;
   if (envId && envSecret) return { appId: envId, appSecret: envSecret, configId: envConfigId };
 
   const r = await sql.query<{ value: { app_id?: string; app_secret?: string; config_id?: string } }>(
     "select value from platform_settings where key = 'instagram_oauth_config'",
   );
   const v = r.rows[0]?.value;
-  if (v?.app_id && v?.app_secret) {
-    return { appId: v.app_id, appSecret: v.app_secret, configId: v.config_id || "1716691300162736" };
-  }
-  return null;
+  return {
+    appId: v?.app_id?.trim() || envId || DEFAULT_META_CLIENT_ID,
+    appSecret: v?.app_secret?.trim() || envSecret || "",
+    configId: v?.config_id?.trim() || envConfigId,
+  };
 }
 
 export async function saveInstagramOAuthConfig(
@@ -74,10 +78,12 @@ export function buildInstagramOAuthUrl(config: InstagramOAuthConfig, redirectUri
     const params = new URLSearchParams({
       client_id: config.appId,
       config_id: config.configId,
+      display: "popup",
+      override_default_response_type: "true",
       redirect_uri: redirectUri,
       response_type: "code",
-      override_default_response_type: "true",
       state,
+      prompt: "login",
     });
     return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
   }

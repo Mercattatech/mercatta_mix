@@ -27,10 +27,17 @@ export async function GET(req: Request) {
     }
     const db = getDb();
     const config = await getInstagramOAuthConfig(db);
-    if (!config) {
-      return NextResponse.redirect(new URL(`/instagram/connect?returnTo=${encodeURIComponent(returnTo)}`, req.url), 302);
+    if (!config.appSecret) {
+      return NextResponse.redirect(
+        new URL(
+          `/instagram/connect?returnTo=${encodeURIComponent(returnTo)}&erro=${encodeURIComponent("Permissão concedida na Meta! Cole apenas o App Secret abaixo para concluir a troca do token.")}`,
+          req.url,
+        ),
+        302,
+      );
     }
-    const redirectUri = `${serverEnv().APP_URL.replace(/\/$/, "")}/api/instagram/oauth/callback`;
+    const base = (process.env.META_REDIRECT_BASE || serverEnv().APP_URL || url.origin).replace(/\/$/, "");
+    const redirectUri = `${base}${url.pathname}`;
     await exchangeInstagramOAuthCode(db, {
       organizationId: ctx.organization.id,
       code,
@@ -44,4 +51,3 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL(`/instagram/connect?returnTo=${encodeURIComponent(returnTo)}&erro=${encodeURIComponent(msg)}`, req.url), 302);
   }
 }
-
