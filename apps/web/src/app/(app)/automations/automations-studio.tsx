@@ -150,9 +150,9 @@ const NODE_KIND_META: Record<
     edgeColor: "#64748b",
   },
   tag_crm: {
-    category: "CRM",
-    defaultTitle: "Classificar Lead",
-    subtitle: "Registra etiqueta no histórico",
+    category: "CRM & Webhook",
+    defaultTitle: "Integração CRM / HTTPS Request",
+    subtitle: "Envia dados via API HTTPS ou Webhook",
     accentText: "text-fuchsia-400",
     iconBg: "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/20",
     edgeColor: "#d946ef",
@@ -571,6 +571,13 @@ export function AutomationsStudio({
   const [busySave, setBusySave] = useState(false);
   const [busySim, setBusySim] = useState(false);
   const [busySync, setBusySync] = useState(false);
+  const [busyCrmTest, setBusyCrmTest] = useState(false);
+  const [crmTestResult, setCrmTestResult] = useState<{
+    ok: boolean;
+    status: number;
+    statusText: string;
+    responsePreview: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -661,7 +668,14 @@ export function AutomationsStudio({
       ...(kind === "tag_crm"
         ? {
             tagName: "QUALIFICADO",
-            text: "Aplica etiqueta QUALIFICADO ao contato no CRM",
+            crmMode: "https_request" as const,
+            httpMethod: "POST" as const,
+            webhookUrl: "https://api.seucrm.com.br/v1/leads",
+            authHeader: "",
+            customHeadersJson: '{\n  "X-Source": "MercattaMix"\n}',
+            payloadTemplate:
+              '{\n  "nome": "{nome}",\n  "instagram": "@{username}",\n  "whatsapp": "{whatsapp}",\n  "email": "{email}",\n  "comentario": "{comentario}",\n  "conta": "@{conta}",\n  "etiqueta": "{tag}",\n  "data": "{timestamp}"\n}',
+            text: "Envia dados do lead via HTTPS Request / Webhook para o CRM externo",
           }
         : {}),
     };
@@ -1138,6 +1152,51 @@ export function AutomationsStudio({
     }
   }
 
+  async function handleTestCrmRequest(node: CustomFlowNode) {
+    if (!node.webhookUrl?.trim()) {
+      setError("Informe a URL da API do CRM ou do Webhook para testar.");
+      return;
+    }
+    setBusyCrmTest(true);
+    setCrmTestResult(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/instagram/automations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          intent: "test_crm_request",
+          url: node.webhookUrl,
+          method: node.httpMethod || "POST",
+          ...(node.authHeader ? { authHeader: node.authHeader } : {}),
+          ...(node.customHeadersJson ? { customHeadersJson: node.customHeadersJson } : {}),
+          ...(node.payloadTemplate ? { payloadTemplate: node.payloadTemplate } : {}),
+          tagName: node.tagName || "QUALIFICADO",
+          accountUsername: selectedAccountObj?.username || "grupomercatta",
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        status?: number;
+        statusText?: string;
+        responsePreview?: string;
+        error?: string;
+      };
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+      setCrmTestResult({
+        ok: Boolean(data.ok),
+        status: data.status ?? 0,
+        statusText: data.statusText ?? "",
+        responsePreview: data.responsePreview ?? "",
+      });
+    } finally {
+      setBusyCrmTest(false);
+    }
+  }
+
   async function handleSyncRealComments() {
     setBusySync(true);
     setError(null);
@@ -1344,7 +1403,7 @@ export function AutomationsStudio({
               { kind: "not_following", label: "Aviso Não Segue" },
               { kind: "lead_capture", label: "Captura de Lead" },
               { kind: "delay", label: "Espera" },
-              { kind: "tag_crm", label: "Tag CRM" },
+              { kind: "tag_crm", label: "CRM / Webhook / API" },
             ] as const
           ).map((item) => (
             <button
@@ -1739,8 +1798,24 @@ export function AutomationsStudio({
                           </div>
                         )}
                         {node.kind === "tag_crm" && (
-                          <div className="rounded-lg border border-white/[0.05] bg-[#0D0F16] px-2.5 py-1.5 font-mono text-[11px] text-fuchsia-300">
-                            #{node.tagName || "QUALIFICADO"}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-[#0D0F16] px-2.5 py-1.5 font-mono text-[11px]">
+                              <span className="text-fuchsia-300">
+                                #{node.tagName || "QUALIFICADO"}
+                              </span>
+                              <span className="rounded bg-fuchsia-500/15 px-1.5 py-0.5 text-[10px] text-fuchsia-300">
+                                {(node.crmMode ?? "https_request") === "https_request"
+                                  ? `${node.httpMethod || "POST"} API`
+                                  : node.crmMode === "webhook"
+                                    ? "Webhook"
+                                    : "CRM Interno"}
+                              </span>
+                            </div>
+                            {node.webhookUrl && (node.crmMode ?? "https_request") !== "tag_only" && (
+                              <div className="truncate rounded-lg border border-white/[0.05] bg-[#0D0F16] px-2.5 py-1.5 font-mono text-[10px] text-slate-400">
+                                {node.webhookUrl}
+                              </div>
+                            )}
                           </div>
                         )}
                       </>
@@ -2036,19 +2111,224 @@ export function AutomationsStudio({
                       )}
 
                       {selectedNode.kind === "tag_crm" && (
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-medium text-slate-300">
-                            Identificador da etiqueta
-                          </label>
-                          <Input
-                            value={selectedNode.tagName ?? ""}
-                            onChange={(e) =>
-                              updateNode(selectedNode.id, {
-                                tagName: e.target.value.toUpperCase(),
-                              })
-                            }
-                            placeholder="QUALIFICADO"
-                          />
+                        <div className="space-y-3.5 border-t border-white/[0.06] pt-3">
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-medium text-slate-300">
+                              Identificador da etiqueta (Tag CRM)
+                            </label>
+                            <Input
+                              value={selectedNode.tagName ?? ""}
+                              onChange={(e) =>
+                                updateNode(selectedNode.id, {
+                                  tagName: e.target.value.toUpperCase(),
+                                })
+                              }
+                              placeholder="QUALIFICADO"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-medium text-slate-300">
+                              Modo de integração com CRM
+                            </label>
+                            <select
+                              value={selectedNode.crmMode ?? "https_request"}
+                              onChange={(e) =>
+                                updateNode(selectedNode.id, {
+                                  crmMode: e.target.value as CustomFlowNode["crmMode"],
+                                })
+                              }
+                              className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-3 text-xs text-slate-100"
+                            >
+                              <option value="https_request">
+                                HTTPS Request — Enviar para API do CRM (POST/PUT/PATCH/GET)
+                              </option>
+                              <option value="webhook">
+                                Webhook de Saída — Disparar evento JSON automático
+                              </option>
+                              <option value="tag_only">
+                                Apenas classificar no CRM interno do Mix
+                              </option>
+                            </select>
+                          </div>
+
+                          {(selectedNode.crmMode ?? "https_request") !== "tag_only" && (
+                            <div className="space-y-3 rounded-xl border border-white/[0.07] bg-[#11131A] p-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-semibold text-slate-200">
+                                  {(selectedNode.crmMode ?? "https_request") === "https_request"
+                                    ? "Configuração HTTPS Request (API CRM)"
+                                    : "Configuração do Webhook de Saída"}
+                                </span>
+                                <span className="font-mono text-[10px] text-fuchsia-400">
+                                  TLS / JSON
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="col-span-1 space-y-1">
+                                  <label className="text-[10px] font-medium text-slate-400">
+                                    Método
+                                  </label>
+                                  <select
+                                    value={selectedNode.httpMethod ?? "POST"}
+                                    onChange={(e) =>
+                                      updateNode(selectedNode.id, {
+                                        httpMethod: e.target.value as CustomFlowNode["httpMethod"],
+                                      })
+                                    }
+                                    className="h-9 w-full rounded-lg border border-white/[0.09] bg-[#171A24] px-2.5 font-mono text-xs text-slate-100"
+                                  >
+                                    <option value="POST">POST</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="PATCH">PATCH</option>
+                                    <option value="GET">GET</option>
+                                  </select>
+                                </div>
+                                <div className="col-span-2 space-y-1">
+                                  <label className="text-[10px] font-medium text-slate-400">
+                                    URL da API do CRM / Webhook
+                                  </label>
+                                  <Input
+                                    value={selectedNode.webhookUrl ?? ""}
+                                    onChange={(e) =>
+                                      updateNode(selectedNode.id, {
+                                        webhookUrl: e.target.value,
+                                      })
+                                    }
+                                    placeholder="https://api.seucrm.com/v1/leads"
+                                    className="h-9 font-mono text-xs"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-medium text-slate-400">
+                                  Token de Autenticação / API Key (Authorization Bearer ou Chave:Valor)
+                                </label>
+                                <Input
+                                  value={selectedNode.authHeader ?? ""}
+                                  onChange={(e) =>
+                                    updateNode(selectedNode.id, {
+                                      authHeader: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Bearer eyJhbGciOi... ou X-API-Key: sua_chave"
+                                  className="h-9 font-mono text-xs"
+                                />
+                              </div>
+
+                              {(selectedNode.crmMode ?? "https_request") === "https_request" && (
+                                <>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-medium text-slate-400">
+                                      Headers HTTP adicionais (JSON ou Chave: Valor)
+                                    </label>
+                                    <textarea
+                                      rows={2}
+                                      value={selectedNode.customHeadersJson ?? ""}
+                                      onChange={(e) =>
+                                        updateNode(selectedNode.id, {
+                                          customHeadersJson: e.target.value,
+                                        })
+                                      }
+                                      placeholder='{"X-CRM-Pipeline": "Instagram"}'
+                                      className="w-full rounded-lg border border-white/[0.09] bg-[#171A24] p-2.5 font-mono text-[11px] text-slate-200 focus:border-indigo-500 focus:outline-none"
+                                    />
+                                  </div>
+
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[10px] font-medium text-slate-400">
+                                        Body / Payload JSON enviado ao CRM
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateNode(selectedNode.id, {
+                                            payloadTemplate:
+                                              '{\n  "nome": "{nome}",\n  "instagram": "@{username}",\n  "whatsapp": "{whatsapp}",\n  "email": "{email}",\n  "comentario": "{comentario}",\n  "conta": "@{conta}",\n  "etiqueta": "{tag}",\n  "data": "{timestamp}"\n}',
+                                          })
+                                        }
+                                        className="text-[10px] text-indigo-400 hover:underline"
+                                      >
+                                        Restaurar JSON padrão
+                                      </button>
+                                    </div>
+                                    <textarea
+                                      rows={6}
+                                      value={selectedNode.payloadTemplate ?? ""}
+                                      onChange={(e) =>
+                                        updateNode(selectedNode.id, {
+                                          payloadTemplate: e.target.value,
+                                        })
+                                      }
+                                      className="w-full rounded-lg border border-white/[0.09] bg-[#171A24] p-2.5 font-mono text-[11px] leading-relaxed text-slate-200 focus:border-indigo-500 focus:outline-none"
+                                    />
+                                    <div className="flex flex-wrap gap-1 pt-0.5">
+                                      {[
+                                        "{nome}",
+                                        "{username}",
+                                        "{whatsapp}",
+                                        "{email}",
+                                        "{comentario}",
+                                        "{conta}",
+                                        "{tag}",
+                                        "{timestamp}",
+                                      ].map((v) => (
+                                        <button
+                                          key={v}
+                                          type="button"
+                                          onClick={() =>
+                                            updateNode(selectedNode.id, {
+                                              payloadTemplate: `${selectedNode.payloadTemplate || ""}${v}`,
+                                            })
+                                          }
+                                          className="rounded border border-white/[0.08] bg-[#171A24] px-1.5 py-0.5 font-mono text-[10px] text-slate-300 hover:border-indigo-500/40 hover:text-white"
+                                        >
+                                          {v}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+
+                              <button
+                                type="button"
+                                disabled={busyCrmTest}
+                                onClick={() => handleTestCrmRequest(selectedNode)}
+                                className="flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-indigo-500/40 bg-indigo-500/15 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/25 disabled:opacity-50"
+                              >
+                                {busyCrmTest && <Spinner />}
+                                Testar envio para API / Webhook agora
+                              </button>
+
+                              {crmTestResult && (
+                                <div
+                                  className={`rounded-lg border p-2.5 text-[11px] ${
+                                    crmTestResult.ok
+                                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                                      : "border-red-500/30 bg-red-500/10 text-red-200"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between font-mono font-semibold">
+                                    <span>
+                                      {crmTestResult.ok ? "✓ Conectado" : "✕ Falha na requisição"}
+                                    </span>
+                                    <span>
+                                      HTTP {crmTestResult.status} {crmTestResult.statusText}
+                                    </span>
+                                  </div>
+                                  {crmTestResult.responsePreview && (
+                                    <pre className="mt-1.5 max-h-24 overflow-auto rounded bg-black/40 p-2 font-mono text-[10px] text-slate-300">
+                                      {crmTestResult.responsePreview}
+                                    </pre>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -2276,8 +2556,39 @@ export function AutomationsStudio({
                 {/* MODO 3: CRM E WEBHOOK */}
                 {drawerMode === "crm" && (
                   <div className="space-y-3">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0D0F16] p-3.5 text-xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-slate-100">
+                          Enviar Leads para CRM Externo (API / Webhook)
+                        </p>
+                        <span className="rounded bg-fuchsia-500/15 px-2 py-0.5 font-mono text-[10px] text-fuchsia-300">
+                          HTTPS Request
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Adicione ou edite um card de <strong>CRM / Webhook / API</strong> no fluxo para disparar uma requisição HTTPS (POST/PUT/PATCH) ou Webhook sempre que um lead for qualificado.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const existingCrm = nodes.find((n) => n.kind === "tag_crm");
+                          if (existingCrm) {
+                            setSelectedNodeId(existingCrm.id);
+                            setDrawerMode("inspector");
+                          } else {
+                            addNewBox("tag_crm");
+                          }
+                        }}
+                        className="w-full rounded-lg border border-indigo-500/40 bg-indigo-500/15 py-2 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/25"
+                      >
+                        {nodes.some((n) => n.kind === "tag_crm")
+                          ? "Configurar Card de API / Webhook do CRM"
+                          : "+ Adicionar Card de API / Webhook do CRM ao Fluxo"}
+                      </button>
+                    </div>
+
                     <div className="rounded-xl border border-white/[0.08] bg-[#0D0F16] p-3 text-xs">
-                      <p className="font-medium text-slate-200">Endpoint Webhook Meta</p>
+                      <p className="font-medium text-slate-200">Webhook de Entrada (Meta Graph API)</p>
                       <p className="mt-1 font-mono text-[11px] text-indigo-300 break-all">
                         {webhookUrl}
                       </p>

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   deleteInstagramAutomation,
   executeAutomationFlowStep,
+  executeCrmHttpsRequest,
   listInstagramAutomationSessions,
   listInstagramAutomations,
   syncAndReplyRecentInstagramComments,
@@ -61,6 +62,12 @@ const upsertSchema = z.object({
           delaySeconds: z.number().optional(),
           tagName: z.string().optional(),
           commentReplies: z.array(z.string()).optional(),
+          crmMode: z.enum(["tag_only", "webhook", "https_request"]).optional(),
+          httpMethod: z.enum(["POST", "PUT", "PATCH", "GET"]).optional(),
+          webhookUrl: z.string().optional(),
+          authHeader: z.string().optional(),
+          customHeadersJson: z.string().optional(),
+          payloadTemplate: z.string().optional(),
         }),
       ),
       edges: z.array(
@@ -101,6 +108,16 @@ const actionSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("sync_comments"),
     instagramAccountId: z.uuid().optional(),
+  }),
+  z.object({
+    intent: z.literal("test_crm_request"),
+    url: z.string().min(4),
+    method: z.enum(["POST", "PUT", "PATCH", "GET"]).default("POST"),
+    authHeader: z.string().optional(),
+    customHeadersJson: z.string().optional(),
+    payloadTemplate: z.string().optional(),
+    tagName: z.string().optional(),
+    accountUsername: z.string().optional(),
   }),
 ]);
 
@@ -188,6 +205,28 @@ export function POST(req: Request) {
         organizationId: orgId,
         ...(body.instagramAccountId ? { instagramAccountId: body.instagramAccountId } : {}),
         ...(process.env.SETTINGS_ENCRYPTION_KEY ? { encryptionKeyRaw: process.env.SETTINGS_ENCRYPTION_KEY } : {}),
+      });
+      return res;
+    }
+
+    if (body.intent === "test_crm_request") {
+      const res = await executeCrmHttpsRequest({
+        url: body.url,
+        method: body.method,
+        ...(body.authHeader ? { authHeader: body.authHeader } : {}),
+        ...(body.customHeadersJson ? { customHeadersJson: body.customHeadersJson } : {}),
+        ...(body.payloadTemplate ? { payloadTemplate: body.payloadTemplate } : {}),
+        vars: {
+          username: "cliente.corporativo",
+          name: "Cliente Teste CRM",
+          conta: body.accountUsername || "grupomercatta",
+          igSenderId: "17841409025273256",
+          triggerText: "EU QUERO",
+          whatsapp: "5511999999999",
+          email: "cliente@empresa.com.br",
+          tag: body.tagName || "QUALIFICADO",
+          isFollowing: true,
+        },
       });
       return res;
     }

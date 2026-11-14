@@ -31,6 +31,12 @@ export interface CustomFlowNode {
   delaySeconds?: number;
   tagName?: string;
   commentReplies?: string[];
+  crmMode?: "tag_only" | "webhook" | "https_request";
+  httpMethod?: "POST" | "PUT" | "PATCH" | "GET";
+  webhookUrl?: string;
+  authHeader?: string;
+  customHeadersJson?: string;
+  payloadTemplate?: string;
 }
 
 export interface CustomFlowEdge {
@@ -612,6 +618,134 @@ export async function sendIgDirectMessage(opts: {
   }
 }
 
+export interface CrmHttpsRequestResult {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  responsePreview: string;
+}
+
+/**
+ * Executa requisição HTTPS (API de CRM externo) ou Webhook com variáveis dinâmicas do Lead.
+ */
+export async function executeCrmHttpsRequest(opts: {
+  url: string;
+  method?: "POST" | "PUT" | "PATCH" | "GET";
+  authHeader?: string;
+  customHeadersJson?: string;
+  payloadTemplate?: string;
+  vars: {
+    username: string;
+    name: string;
+    conta: string;
+    igSenderId: string;
+    triggerText: string;
+    whatsapp?: string;
+    email?: string;
+    tag?: string;
+    isFollowing?: boolean;
+  };
+}): Promise<CrmHttpsRequestResult> {
+  const cleanUrl = opts.url.trim();
+  if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) {
+    throw new UserFacingError("Informe uma URL válida iniciando com https:// ou http://");
+  }
+
+  const method = opts.method || "POST";
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": "MercattaMix-CRM-Webhook/1.0",
+  };
+
+  if (opts.authHeader?.trim()) {
+    const rawAuth = opts.authHeader.trim();
+    if (rawAuth.includes(":")) {
+      const [k, ...rest] = rawAuth.split(":");
+      if (k) headers[k.trim()] = rest.join(":").trim();
+    } else {
+      headers["Authorization"] = rawAuth.startsWith("Bearer ") ? rawAuth : `Bearer ${rawAuth}`;
+    }
+  }
+
+  if (opts.customHeadersJson?.trim()) {
+    const raw = opts.customHeadersJson.trim();
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(parsed)) {
+        if (k && v !== undefined && v !== null) headers[k] = String(v);
+      }
+    } catch {
+      for (const line of raw.split("\n")) {
+        const idx = line.indexOf(":");
+        if (idx > 0) {
+          const k = line.slice(0, idx).trim();
+          const v = line.slice(idx + 1).trim();
+          if (k && v) headers[k] = v;
+        }
+      }
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const defaultPayload = {
+    event: "instagram_automation.lead",
+    source: "mercatta_mix",
+    timestamp: nowIso,
+    tag: opts.vars.tag || "QUALIFICADO",
+    account: opts.vars.conta,
+    lead: {
+      ig_user_id: opts.vars.igSenderId,
+      username: opts.vars.username,
+      name: opts.vars.name,
+      whatsapp: opts.vars.whatsapp || "",
+      email: opts.vars.email || "",
+      is_following: Boolean(opts.vars.isFollowing),
+      trigger_text: opts.vars.triggerText,
+    },
+  };
+
+  let bodyStr: string | undefined;
+  if (method !== "GET") {
+    if (opts.payloadTemplate?.trim()) {
+      bodyStr = opts.payloadTemplate
+        .replace(/\{username\}/gi, opts.vars.username)
+        .replace(/\{nome\}/gi, opts.vars.name)
+        .replace(/\{conta\}/gi, opts.vars.conta)
+        .replace(/\{ig_user_id\}/gi, opts.vars.igSenderId)
+        .replace(/\{comentario\}/gi, opts.vars.triggerText.replace(/"/g, '\\"'))
+        .replace(/\{whatsapp\}/gi, opts.vars.whatsapp || "")
+        .replace(/\{email\}/gi, opts.vars.email || "")
+        .replace(/\{tag\}/gi, opts.vars.tag || "QUALIFICADO")
+        .replace(/\{timestamp\}/gi, nowIso);
+    } else {
+      bodyStr = JSON.stringify(defaultPayload, null, 2);
+    }
+  }
+
+  try {
+    const res = await fetch(cleanUrl, {
+      method,
+      headers,
+      ...(bodyStr ? { body: bodyStr } : {}),
+      signal: AbortSignal.timeout(10000),
+    });
+    const text = await res.text().catch(() => "");
+    return {
+      ok: res.ok,
+      status: res.status,
+      statusText: res.statusText || (res.ok ? "OK" : "Error"),
+      responsePreview: text.slice(0, 400),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      statusText: "Network Error",
+      responsePreview: (e as Error).message,
+    };
+  }
+}
+
 export interface SimulationStepResult {
   session: InstagramAutomationSessionView;
   botMessages: Array<{
@@ -677,6 +811,32 @@ export async function executeAutomationFlowStep(
     name: resolvedName,
     conta: auto.accountUsername || auto.accountName,
   };
+
+  async function fireConfiguredCrmNodes(extra?: { whatsapp?: string; email?: string }) {
+    const crmNodes = (auto.flowGraph?.nodes ?? []).filter(
+      (n) => n.kind === "tag_crm" && n.webhookUrl && /^https?:\/\//i.test(n.webhookUrl.trim()),
+    );
+    for (const crmNode of crmNodes) {
+      await executeCrmHttpsRequest({
+        url: crmNode.webhookUrl!,
+        ...(crmNode.httpMethod ? { method: crmNode.httpMethod } : {}),
+        ...(crmNode.authHeader ? { authHeader: crmNode.authHeader } : {}),
+        ...(crmNode.customHeadersJson ? { customHeadersJson: crmNode.customHeadersJson } : {}),
+        ...(crmNode.payloadTemplate ? { payloadTemplate: crmNode.payloadTemplate } : {}),
+        vars: {
+          username: resolvedUsername,
+          name: resolvedName,
+          conta: vars.conta,
+          igSenderId: opts.igSenderId,
+          triggerText: opts.inputText,
+          ...(extra?.whatsapp ? { whatsapp: extra.whatsapp } : {}),
+          ...(extra?.email ? { email: extra.email } : {}),
+          ...(crmNode.tagName ? { tag: crmNode.tagName } : {}),
+          isFollowing,
+        },
+      }).catch(() => null);
+    }
+  }
 
   const botMessages: SimulationStepResult["botMessages"] = [];
 
@@ -756,6 +916,7 @@ export async function executeAutomationFlowStep(
           "update instagram_automation_sessions set is_following = true, stage = 'delivered', dm_sent = $3, updated_at = now() where organization_id = $1 and id = $2",
           [opts.organizationId, opts.sessionId, finalDm],
         );
+        await fireConfiguredCrmNodes();
       }
     }
 
@@ -800,6 +961,10 @@ export async function executeAutomationFlowStep(
     await sql.query(
       "update instagram_automations set leads_captured_count = leads_captured_count + 1, dms_sent_count = dms_sent_count + 1, updated_at = now() where organization_id = $1 and id = $2",
       [opts.organizationId, auto.id],
+    );
+
+    await fireConfiguredCrmNodes(
+      isEmail ? { email: cleanLead } : { whatsapp: cleanLead },
     );
 
     const sessions = await listInstagramAutomationSessions(sql, opts.organizationId, 20);
@@ -911,6 +1076,10 @@ export async function executeAutomationFlowStep(
       where organization_id = $1 and id = $2`,
     [opts.organizationId, auto.id, commentReplySent ? 1 : 0],
   );
+
+  if (initialStage === "delivered") {
+    await fireConfiguredCrmNodes();
+  }
 
   const sessions = await listInstagramAutomationSessions(sql, opts.organizationId, 20);
   return {

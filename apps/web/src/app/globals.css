@@ -1,28 +1,28 @@
 @import "tailwindcss";
 
-/* Mercatta Mix — sistema de design. Suporta Modo Noite (padrão) e Modo Dia. */
+/* Mercatta Mix — Sistema Visual Corporativo (Arquitetura Obsidian & Indigo). */
 :root {
-  --bg: #090910;
-  --surface: #11111b;
-  --surface-2: #181826;
+  --bg: #090a0f;
+  --surface: #11131a;
+  --surface-2: #171a24;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.16);
-  --fg: #eeedf7;
-  --muted: #9391ab;
-  --primary: #8b5cf6;
-  --primary-2: #a78bfa;
-  --accent: #ff7a59;
-  --success: #34d399;
-  --warn: #fbbf24;
-  --danger: #f87171;
-  --radius: 16px;
-  --glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
-  --glass-border: var(--border);
-  --glass-shadow: none;
-  --body-radial-1: rgba(139, 92, 246, 0.18);
-  --body-radial-2: rgba(255, 122, 89, 0.12);
-  --gradient-text: linear-gradient(100deg, #c4b5fd 0%, #8b5cf6 40%, #ff7a59 100%);
-  --selection-bg: rgba(139, 92, 246, 0.4);
+  --fg: #f1f5f9;
+  --muted: #94a3b8;
+  --primary: #6366f1;
+  --primary-2: #818cf8;
+  --accent: #38bdf8;
+  --success: #10b981;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+  --radius: 12px;
+  --glass-bg: #11131a;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+  --body-radial-1: rgba(99, 102, 241, 0.07);
+  --body-radial-2: rgba(56, 189, 248, 0.04);
+  --gradient-text: linear-gradient(100deg, #f8fafc 0%, #cbd5e1 65%, #818cf8 100%);
+  --selection-bg: rgba(99, 102, 241, 0.35);
   color-scheme: dark;
 }
 
@@ -30,23 +30,23 @@ html[data-theme="light"] {
   --bg: #f8fafc;
   --surface: #ffffff;
   --surface-2: #f1f5f9;
-  --border: rgba(15, 23, 42, 0.10);
-  --border-strong: rgba(15, 23, 42, 0.20);
+  --border: rgba(15, 23, 42, 0.09);
+  --border-strong: rgba(15, 23, 42, 0.18);
   --fg: #0f172a;
   --muted: #64748b;
-  --primary: #7c3aed;
-  --primary-2: #6d28d9;
-  --accent: #f97316;
-  --success: #16a34a;
+  --primary: #4f46e5;
+  --primary-2: #4338ca;
+  --accent: #0284c7;
+  --success: #059669;
   --warn: #d97706;
   --danger: #dc2626;
   --glass-bg: #ffffff;
-  --glass-border: rgba(15, 23, 42, 0.10);
-  --glass-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
-  --body-radial-1: rgba(124, 58, 237, 0.07);
-  --body-radial-2: rgba(249, 115, 22, 0.05);
-  --gradient-text: linear-gradient(100deg, #6d28d9 0%, #7c3aed 50%, #ea580c 100%);
-  --selection-bg: rgba(124, 58, 237, 0.25);
+  --glass-border: rgba(15, 23, 42, 0.09);
+  --glass-shadow: 0 2px 12px -2px rgba(15, 23, 42, 0.05);
+  --body-radial-1: rgba(79, 70, 229, 0.04);
+  --body-radial-2: rgba(2, 132, 199, 0.03);
+  --gradient-text: linear-gradient(100deg, #0f172a 0%, #334155 65%, #4f46e5 100%);
+  --selection-bg: rgba(79, 70, 229, 0.2);
   color-scheme: light;
 }
 
@@ -70,8 +70,8 @@ html[data-theme="light"] {
 
 body {
   background:
-    radial-gradient(900px 500px at 12% -10%, var(--body-radial-1), transparent 60%),
-    radial-gradient(700px 420px at 100% 0%, var(--body-radial-2), transparent 55%),
+    radial-gradient(900px 480px at 15% -10%, var(--body-radial-1), transparent 60%),
+    radial-gradient(700px 400px at 90% 0%, var(--body-radial-2), transparent 55%),
     var(--bg);
   background-attachment: fixed;
   color: var(--fg);
@@ -89,7 +89,6 @@ body {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   border-radius: var(--radius);
-  backdrop-filter: blur(14px);
 }
 
 .gradient-text {
@@ -100,25 +99,24 @@ body {
 }
 
 .btn-glow {
-  background-image: linear-gradient(100deg, #7c3aed, #8b5cf6 45%, #ff7a59);
-  box-shadow: 0 8px 30px -8px rgba(139, 92, 246, 0.6);
-  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  background-color: #4f46e5;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 2px 10px -2px rgba(79, 70, 229, 0.45);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .btn-glow:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 36px -8px rgba(139, 92, 246, 0.75);
-  filter: brightness(1.08);
-}
-.btn-glow:active:not(:disabled) {
-  transform: translateY(0);
+  background-color: #6366f1;
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 4px 16px -2px rgba(99, 102, 241, 0.55);
 }
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-in {
-  animation: fade-up 0.35s ease both;
+  animation: fade-up 0.25s ease both;
 }
 
 @keyframes shimmer {
@@ -126,7 +124,7 @@ body {
   to { background-position: 200% 0; }
 }
 .shimmer {
-  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.04) 75%);
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.6s linear infinite;
 }
@@ -143,11 +141,11 @@ body {
 
 /* Palavra selecionável da transcrição */
 .word-chip {
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 2px 6px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.word-chip:hover { background: rgba(139, 92, 246, 0.25); }
-.word-chip[data-in-range="true"] { background: rgba(139, 92, 246, 0.45); color: #fff; }
+.word-chip:hover { background: rgba(99, 102, 241, 0.22); }
+.word-chip[data-in-range="true"] { background: rgba(99, 102, 241, 0.42); color: #fff; }
 .word-chip[data-used="true"] { box-shadow: inset 0 -2px 0 var(--accent); }
