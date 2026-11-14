@@ -8,6 +8,45 @@ export type MatchMode = "contains" | "exact" | "any_comment";
 export type CollectLeadField = "none" | "email" | "whatsapp";
 export type SessionStage = "triggered" | "awaiting_follow" | "awaiting_lead_input" | "delivered" | "failed";
 
+export type CustomNodeKind =
+  | "trigger"
+  | "comment_reply"
+  | "dm_message"
+  | "follow_gate"
+  | "not_following"
+  | "lead_capture"
+  | "delay"
+  | "tag_crm";
+
+export interface CustomFlowNode {
+  id: string;
+  kind: CustomNodeKind;
+  title: string;
+  x: number;
+  y: number;
+  text?: string;
+  buttonTitle?: string;
+  buttonUrl?: string;
+  leadField?: "whatsapp" | "email" | "name" | "custom";
+  delaySeconds?: number;
+  tagName?: string;
+  commentReplies?: string[];
+}
+
+export interface CustomFlowEdge {
+  id: string;
+  from: string;
+  fromPort: "out" | "yes" | "no";
+  to: string;
+  color?: string;
+  label?: string;
+}
+
+export interface CustomFlowGraph {
+  nodes: CustomFlowNode[];
+  edges: CustomFlowEdge[];
+}
+
 export interface InstagramAutomationView {
   id: string;
   organizationId: string;
@@ -33,6 +72,7 @@ export interface InstagramAutomationView {
   dmMessage: string;
   dmButtonTitle: string;
   dmButtonUrl: string;
+  flowGraph: CustomFlowGraph | null;
   triggersCount: number;
   commentRepliesCount: number;
   dmsSentCount: number;
@@ -89,6 +129,7 @@ export interface UpsertInstagramAutomationInput {
   dmMessage: string;
   dmButtonTitle?: string;
   dmButtonUrl?: string;
+  flowGraph?: CustomFlowGraph | null;
 }
 
 function normalizeText(s: string): string {
@@ -154,6 +195,10 @@ function mapAutomationRow(row: Record<string, unknown>): InstagramAutomationView
     dmMessage: String(row.dm_message ?? ""),
     dmButtonTitle: String(row.dm_button_title ?? "Acessar Agora 🚀"),
     dmButtonUrl: String(row.dm_button_url ?? ""),
+    flowGraph:
+      row.flow_graph && typeof row.flow_graph === "object"
+        ? (row.flow_graph as CustomFlowGraph)
+        : null,
     triggersCount: Number(row.triggers_count ?? 0),
     commentRepliesCount: Number(row.comment_replies_count ?? 0),
     dmsSentCount: Number(row.dms_sent_count ?? 0),
@@ -272,9 +317,11 @@ export async function upsertInstagramAutomation(
 
   const keywords = input.keywords.map((k) => k.trim()).filter(Boolean);
   const commentReplies = input.commentReplies.map((c) => c.trim()).filter(Boolean);
+  const flowGraphJson = input.flowGraph ? JSON.stringify(input.flowGraph) : null;
+  let savedId: string | undefined = input.id;
 
   if (input.id) {
-    const r = await sql.query(
+    const r = await sql.query<{ id: string }>(
       `update instagram_automations
           set instagram_account_id = $3,
               project_id = $4,
@@ -296,9 +343,10 @@ export async function upsertInstagramAutomation(
               dm_message = $20,
               dm_button_title = $21,
               dm_button_url = $22,
+              flow_graph = coalesce($23::jsonb, flow_graph),
               updated_at = now()
         where organization_id = $1 and id = $2
-        returning *`,
+        returning id`,
       [
         input.organizationId,
         input.id,
@@ -322,26 +370,28 @@ export async function upsertInstagramAutomation(
         input.dmMessage.trim(),
         (input.dmButtonTitle || "Acessar Agora 🚀").trim(),
         (input.dmButtonUrl ?? "").trim(),
+        flowGraphJson,
       ],
     );
     if (!r.rows[0]) throw new UserFacingError("Automação não encontrada.");
+    savedId = r.rows[0].id;
   } else {
-    await sql.query(
+    const r = await sql.query<{ id: string }>(
       `insert into instagram_automations (
         organization_id, instagram_account_id, project_id, name, status,
         trigger_type, media_scope, target_media_ids, match_mode, keywords,
         reply_to_comment, comment_replies,
         require_follow, follow_gate_message, follow_gate_button_label, not_following_message,
         collect_lead_field, collect_lead_prompt,
-        dm_message, dm_button_title, dm_button_url
+        dm_message, dm_button_title, dm_button_url, flow_graph
       ) values (
         $1, $2, $3, $4, $5,
         $6, $7, $8::text[], $9, $10::text[],
         $11, $12::text[],
         $13, $14, $15, $16,
         $17, $18,
-        $19, $20, $21
-      )`,
+        $19, $20, $21, $22::jsonb
+      ) returning id`,
       [
         input.organizationId,
         input.instagramAccountId,
@@ -364,12 +414,14 @@ export async function upsertInstagramAutomation(
         input.dmMessage.trim(),
         (input.dmButtonTitle || "Acessar Agora 🚀").trim(),
         (input.dmButtonUrl ?? "").trim(),
+        flowGraphJson,
       ],
     );
+    savedId = r.rows[0]?.id;
   }
 
   const all = await listInstagramAutomations(sql, input.organizationId);
-  return all[all.length - 1]!;
+  return all.find((a) => a.id === savedId) ?? all[all.length - 1]!;
 }
 
 export async function toggleInstagramAutomationStatus(
@@ -964,3 +1016,4 @@ export async function syncAndReplyRecentInstagramComments(
 
   return { checkedMedia, triggeredCount };
 }
+

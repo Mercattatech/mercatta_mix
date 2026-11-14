@@ -36,6 +36,46 @@ const upsertSchema = z.object({
   dmMessage: z.string().min(1),
   dmButtonTitle: z.string().optional(),
   dmButtonUrl: z.string().optional(),
+  flowGraph: z
+    .object({
+      nodes: z.array(
+        z.object({
+          id: z.string(),
+          kind: z.enum([
+            "trigger",
+            "comment_reply",
+            "dm_message",
+            "follow_gate",
+            "not_following",
+            "lead_capture",
+            "delay",
+            "tag_crm",
+          ]),
+          title: z.string(),
+          x: z.number(),
+          y: z.number(),
+          text: z.string().optional(),
+          buttonTitle: z.string().optional(),
+          buttonUrl: z.string().optional(),
+          leadField: z.enum(["whatsapp", "email", "name", "custom"]).optional(),
+          delaySeconds: z.number().optional(),
+          tagName: z.string().optional(),
+          commentReplies: z.array(z.string()).optional(),
+        }),
+      ),
+      edges: z.array(
+        z.object({
+          id: z.string(),
+          from: z.string(),
+          fromPort: z.enum(["out", "yes", "no"]),
+          to: z.string(),
+          color: z.string().optional(),
+          label: z.string().optional(),
+        }),
+      ),
+    })
+    .nullable()
+    .optional(),
 });
 
 const actionSchema = z.discriminatedUnion("intent", [
@@ -111,6 +151,7 @@ export function POST(req: Request) {
         dmMessage: body.dmMessage,
         ...(body.dmButtonTitle !== undefined ? { dmButtonTitle: body.dmButtonTitle } : {}),
         ...(body.dmButtonUrl !== undefined ? { dmButtonUrl: body.dmButtonUrl } : {}),
+        ...(body.flowGraph !== undefined ? { flowGraph: body.flowGraph } : {}),
       });
       return { automation };
     }
@@ -154,3 +195,4 @@ export function POST(req: Request) {
     return { ok: true };
   });
 }
+
